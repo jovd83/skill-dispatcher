@@ -1,0 +1,30 @@
+[project]
+name = "skill-dispatcher"
+version = "2.0.0"
+description = "Strategic routing and orchestration layer for AI AgentSkill ecosystems."
+authors = [{ name = "Skill Dispatcher Authors" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["ai", "agent", "skills", "routing", "orchestration", "dispatch"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.8",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/agentskills/skill-dispatcher"
+Repository = "https://github.com/agentskills/skill-dispatcher.git"
+Issues = "https://github.com/agentskills/skill-dispatcher/issues"
+
+[project.scripts]
+skill-dispatcher-refresh = "skills.skill-dispatcher.scripts.build_registry:main"
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
