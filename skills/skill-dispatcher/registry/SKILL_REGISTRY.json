@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-08T22:30:17.566062",
+  "generated_at": "2026-04-08T22:43:43.157231",
   "registry_contract_version": "2.0",
   "dispatch_contract": {
     "inputs": [
@@ -36,6 +36,21 @@
     "automation-quality-review": [
       "automated-test-reviewer"
     ],
+    "ui-automation": [
+      "cypress-skill",
+      "playwright-skill"
+    ],
+    "cypress": [
+      "cypress-skill"
+    ],
+    "coverage-planning": [
+      "cypress-skill",
+      "playwright-skill"
+    ],
+    "automation-routing": [
+      "cypress-skill",
+      "playwright-skill"
+    ],
     "defect-lifecycle": [
       "bug-fix-lifecycle"
     ],
@@ -54,17 +69,20 @@
     "seeded-data-generation": [
       "lifelike-synthetic-data-generator"
     ],
-    "ui-automation": [
-      "playwright-skill"
-    ],
     "playwright": [
       "playwright-skill"
     ],
-    "coverage-planning": [
-      "playwright-skill"
+    "api-automation": [
+      "restassured-skill"
     ],
-    "automation-routing": [
-      "playwright-skill"
+    "restassured": [
+      "restassured-skill"
+    ],
+    "api-test-planning": [
+      "restassured-skill"
+    ],
+    "api-test-reporting": [
+      "restassured-skill"
     ],
     "test-artifact-export": [
       "test-artifact-export-skill"
@@ -95,6 +113,19 @@
     "explain_automated_test_script": [
       "automated-test-reviewer"
     ],
+    "implement_ui_confirmation_test": [
+      "cypress-skill",
+      "playwright-skill"
+    ],
+    "plan_cypress_coverage": [
+      "cypress-skill"
+    ],
+    "diagnose_cypress_failure": [
+      "cypress-skill"
+    ],
+    "document_cypress_tests": [
+      "cypress-skill"
+    ],
     "triage_defect": [
       "bug-fix-lifecycle"
     ],
@@ -113,9 +144,6 @@
     "generate_synthetic_dataset": [
       "lifelike-synthetic-data-generator"
     ],
-    "implement_ui_confirmation_test": [
-      "playwright-skill"
-    ],
     "plan_playwright_coverage": [
       "playwright-skill"
     ],
@@ -124,6 +152,18 @@
     ],
     "document_playwright_tests": [
       "playwright-skill"
+    ],
+    "implement_api_confirmation_test": [
+      "restassured-skill"
+    ],
+    "plan_api_test_coverage": [
+      "restassured-skill"
+    ],
+    "document_api_tests": [
+      "restassured-skill"
+    ],
+    "report_api_test_results": [
+      "restassured-skill"
     ],
     "render_test_artifact": [
       "test-artifact-export-skill"
@@ -336,15 +376,41 @@
     {
       "name": "cypress-skill",
       "description": "Flagship Cypress skill pack for planning, authoring, debugging, documenting, and operationalizing Cypress work. Use when Codex needs Cypress guidance or routing across E2E, API, component, visual, accessibility, CI/CD, coverage planning, documentation, CLI browser automation, or optional handoff workflows.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "testing",
+      "risk": "high",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "ui-automation",
+        "cypress",
+        "coverage-planning",
+        "automation-routing"
+      ],
+      "accepted_intents": [
+        "implement_ui_confirmation_test",
+        "plan_cypress_coverage",
+        "diagnose_cypress_failure",
+        "document_cypress_tests"
+      ],
+      "input_artifacts": [
+        "repo_context",
+        "requirements",
+        "test_case_set",
+        "existing_cypress_suite",
+        "failing_ui_scenario"
+      ],
+      "output_artifacts": [
+        "cypress_test",
+        "coverage_plan",
+        "root_cause_report",
+        "automation_docs",
+        "routing_request"
+      ],
+      "stack_tags": [
+        "cypress",
+        "ui-testing",
+        "browser-automation"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\Cypress-skill",
       "source": "C:\\projects\\skills"
@@ -911,15 +977,41 @@
     {
       "name": "restassured-skill",
       "description": "Use when Codex needs to design, implement, run, document, or report Rest Assured API tests for REST services, contract-driven service tests, JUnit 5 automation, CI pipelines, or test-management integrations.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "testing",
+      "risk": "high",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "api-automation",
+        "restassured",
+        "api-test-planning",
+        "api-test-reporting"
+      ],
+      "accepted_intents": [
+        "implement_api_confirmation_test",
+        "plan_api_test_coverage",
+        "document_api_tests",
+        "report_api_test_results"
+      ],
+      "input_artifacts": [
+        "repo_context",
+        "api_requirements",
+        "api_contract",
+        "approved_test_cases",
+        "failing_api_scenario"
+      ],
+      "output_artifacts": [
+        "restassured_test",
+        "coverage_plan",
+        "api_test_docs",
+        "traceability_report",
+        "routing_request"
+      ],
+      "stack_tags": [
+        "restassured",
+        "api-testing",
+        "junit5"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\RestAssured-skill",
       "source": "C:\\projects\\skills"
