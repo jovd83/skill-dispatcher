@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-08T22:56:49.688353",
+  "generated_at": "2026-04-08T23:15:02.529756",
   "registry_contract_version": "2.0",
   "dispatch_contract": {
     "inputs": [
@@ -24,6 +24,34 @@
     "C:\\Users\\jochi\\.agents\\skills"
   ],
   "capability_index": {
+    "accessibility-audit": [
+      "a11y-audit-agent-skill"
+    ],
+    "wcag-review": [
+      "a11y-audit-agent-skill"
+    ],
+    "remediation-reporting": [
+      "a11y-audit-agent-skill",
+      "defensive-appsec-review-skill"
+    ],
+    "acceptance-criteria-design": [
+      "acceptance-criteria-designer"
+    ],
+    "requirements-clarification": [
+      "acceptance-criteria-designer"
+    ],
+    "criteria-format-conversion": [
+      "acceptance-criteria-designer"
+    ],
+    "bdd-review": [
+      "agentic-bdd-test-case-mentor"
+    ],
+    "bdd-generation": [
+      "agentic-bdd-test-case-mentor"
+    ],
+    "gherkin-mentoring": [
+      "agentic-bdd-test-case-mentor"
+    ],
     "automated-test-review": [
       "automated-test-reviewer"
     ],
@@ -60,6 +88,40 @@
     "bug-fix-reporting": [
       "bug-fix-lifecycle"
     ],
+    "defensive-appsec-review": [
+      "defensive-appsec-review-skill"
+    ],
+    "security-triage": [
+      "defensive-appsec-review-skill"
+    ],
+    "diagram-generation": [
+      "diagram-generator"
+    ],
+    "architecture-visualization": [
+      "diagram-generator"
+    ],
+    "mermaid-authoring": [
+      "diagram-generator"
+    ],
+    "backlog-generation": [
+      "backlog-story-generator"
+    ],
+    "epic-design": [
+      "backlog-story-generator"
+    ],
+    "story-export": [
+      "backlog-story-generator"
+    ],
+    "functional-analysis-skill-research": [
+      "functional-analysis-meta-skill"
+    ],
+    "skill-scaffolding": [
+      "functional-analysis-meta-skill",
+      "testing-meta-skill"
+    ],
+    "skill-categorization": [
+      "functional-analysis-meta-skill"
+    ],
     "unit-testing": [
       "junit5-skill",
       "stack-aware-unit-testing-skill"
@@ -82,6 +144,15 @@
     "seeded-data-generation": [
       "lifelike-synthetic-data-generator"
     ],
+    "dependency-review": [
+      "modern-dependency-guard"
+    ],
+    "stack-modernization": [
+      "modern-dependency-guard"
+    ],
+    "manifest-analysis": [
+      "modern-dependency-guard"
+    ],
     "feature-orchestration": [
       "new-feature-sdlc-skill"
     ],
@@ -94,8 +165,35 @@
     "release-reporting": [
       "new-feature-sdlc-skill"
     ],
+    "performance-test-planning": [
+      "performance-testing-skill"
+    ],
+    "performance-test-analysis": [
+      "performance-testing-skill"
+    ],
+    "load-test-reporting": [
+      "performance-testing-skill"
+    ],
     "playwright": [
       "playwright-skill"
+    ],
+    "code-audit": [
+      "principal-audit-refactor"
+    ],
+    "refactor-planning": [
+      "principal-audit-refactor"
+    ],
+    "approval-gated-refactor": [
+      "principal-audit-refactor"
+    ],
+    "responsive-test-planning": [
+      "responsive-testing"
+    ],
+    "responsive-test-execution": [
+      "responsive-testing"
+    ],
+    "responsive-reporting": [
+      "responsive-testing"
     ],
     "api-automation": [
       "restassured-skill"
@@ -109,6 +207,15 @@
     "api-test-reporting": [
       "restassured-skill"
     ],
+    "shared-policy-management": [
+      "shared-memory"
+    ],
+    "memory-curation": [
+      "shared-memory"
+    ],
+    "durable-convention-storage": [
+      "shared-memory"
+    ],
     "component-testing": [
       "stack-aware-unit-testing-skill"
     ],
@@ -117,6 +224,15 @@
     ],
     "unit-test-review": [
       "stack-aware-unit-testing-skill"
+    ],
+    "requirements-test-analysis": [
+      "test-analysis-skill"
+    ],
+    "ambiguity-review": [
+      "test-analysis-skill"
+    ],
+    "delivery-risk-analysis": [
+      "test-analysis-skill"
     ],
     "test-artifact-export": [
       "test-artifact-export-skill"
@@ -135,9 +251,42 @@
     ],
     "confirmation-test-design": [
       "test-design-orchestrator"
+    ],
+    "testing-skill-research": [
+      "testing-meta-skill"
+    ],
+    "testing-skill-categorization": [
+      "testing-meta-skill"
     ]
   },
   "intent_index": {
+    "run_accessibility_audit": [
+      "a11y-audit-agent-skill"
+    ],
+    "review_wcag_compliance": [
+      "a11y-audit-agent-skill"
+    ],
+    "generate_accessibility_report": [
+      "a11y-audit-agent-skill"
+    ],
+    "design_acceptance_criteria": [
+      "acceptance-criteria-designer"
+    ],
+    "review_acceptance_criteria": [
+      "acceptance-criteria-designer"
+    ],
+    "convert_acceptance_criteria": [
+      "acceptance-criteria-designer"
+    ],
+    "review_bdd_test_cases": [
+      "agentic-bdd-test-case-mentor"
+    ],
+    "generate_bdd_test_cases": [
+      "agentic-bdd-test-case-mentor"
+    ],
+    "rewrite_bdd_test_cases": [
+      "agentic-bdd-test-case-mentor"
+    ],
     "review_automation_quality": [
       "automated-test-reviewer"
     ],
@@ -169,6 +318,42 @@
     "orchestrate_defect_resolution": [
       "bug-fix-lifecycle"
     ],
+    "review_application_security": [
+      "defensive-appsec-review-skill"
+    ],
+    "triage_security_findings": [
+      "defensive-appsec-review-skill"
+    ],
+    "plan_security_review": [
+      "defensive-appsec-review-skill"
+    ],
+    "generate_architecture_diagram": [
+      "diagram-generator"
+    ],
+    "generate_workflow_diagram": [
+      "diagram-generator"
+    ],
+    "document_system_visually": [
+      "diagram-generator"
+    ],
+    "generate_backlog_stories": [
+      "backlog-story-generator"
+    ],
+    "generate_epics": [
+      "backlog-story-generator"
+    ],
+    "export_story_pack": [
+      "backlog-story-generator"
+    ],
+    "research_functional_analysis_skills": [
+      "functional-analysis-meta-skill"
+    ],
+    "scaffold_functional_analysis_skill": [
+      "functional-analysis-meta-skill"
+    ],
+    "categorize_functional_analysis_skill": [
+      "functional-analysis-meta-skill"
+    ],
     "implement_unit_tests": [
       "junit5-skill",
       "stack-aware-unit-testing-skill"
@@ -191,6 +376,15 @@
     "generate_synthetic_dataset": [
       "lifelike-synthetic-data-generator"
     ],
+    "review_dependencies": [
+      "modern-dependency-guard"
+    ],
+    "modernize_dependency_choices": [
+      "modern-dependency-guard"
+    ],
+    "scan_package_manifest": [
+      "modern-dependency-guard"
+    ],
     "orchestrate_feature_delivery": [
       "new-feature-sdlc-skill"
     ],
@@ -200,6 +394,15 @@
     "coordinate_feature_verification": [
       "new-feature-sdlc-skill"
     ],
+    "plan_performance_test": [
+      "performance-testing-skill"
+    ],
+    "analyze_performance_results": [
+      "performance-testing-skill"
+    ],
+    "review_performance_strategy": [
+      "performance-testing-skill"
+    ],
     "plan_playwright_coverage": [
       "playwright-skill"
     ],
@@ -208,6 +411,24 @@
     ],
     "document_playwright_tests": [
       "playwright-skill"
+    ],
+    "audit_codebase": [
+      "principal-audit-refactor"
+    ],
+    "plan_refactor": [
+      "principal-audit-refactor"
+    ],
+    "execute_approved_refactor": [
+      "principal-audit-refactor"
+    ],
+    "plan_responsive_tests": [
+      "responsive-testing"
+    ],
+    "run_responsive_tests": [
+      "responsive-testing"
+    ],
+    "report_responsive_results": [
+      "responsive-testing"
     ],
     "implement_api_confirmation_test": [
       "restassured-skill"
@@ -221,11 +442,29 @@
     "report_api_test_results": [
       "restassured-skill"
     ],
+    "read_shared_policy": [
+      "shared-memory"
+    ],
+    "write_shared_policy": [
+      "shared-memory"
+    ],
+    "deprecate_shared_policy": [
+      "shared-memory"
+    ],
     "plan_unit_test_work": [
       "stack-aware-unit-testing-skill"
     ],
     "review_unit_test_coverage": [
       "stack-aware-unit-testing-skill"
+    ],
+    "analyze_requirements_for_testability": [
+      "test-analysis-skill"
+    ],
+    "review_requirement_quality": [
+      "test-analysis-skill"
+    ],
+    "assess_delivery_risk": [
+      "test-analysis-skill"
     ],
     "render_test_artifact": [
       "test-artifact-export-skill"
@@ -244,6 +483,15 @@
     ],
     "generate_structured_test_cases": [
       "test-design-orchestrator"
+    ],
+    "research_testing_skills": [
+      "testing-meta-skill"
+    ],
+    "scaffold_testing_skill": [
+      "testing-meta-skill"
+    ],
+    "categorize_testing_skill": [
+      "testing-meta-skill"
     ]
   },
   "skills": [
@@ -266,15 +514,36 @@
     {
       "name": "a11y-audit-agent-skill",
       "description": "Run structured accessibility audits for websites and web applications using a hybrid workflow: scope representative pages, run automated scanners, perform manual verification, and deliver remediation-ready reports. Use when Codex needs to assess WCAG compliance, Section 508 or EN 301 549 alignment, accessibility risk on a page or app, or produce developer/stakeholder audit artifacts with evidence.",
-      "category": "uncategorized",
+      "category": "testing",
       "risk": "medium",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "accessibility-audit",
+        "wcag-review",
+        "remediation-reporting"
+      ],
+      "accepted_intents": [
+        "run_accessibility_audit",
+        "review_wcag_compliance",
+        "generate_accessibility_report"
+      ],
+      "input_artifacts": [
+        "url_scope",
+        "accessibility_target",
+        "audit_constraints",
+        "repository_context"
+      ],
+      "output_artifacts": [
+        "accessibility_findings",
+        "remediation_report",
+        "stakeholder_summary"
+      ],
+      "stack_tags": [
+        "accessibility",
+        "web",
+        "audit"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\a11y-audit-agent-skill",
       "source": "C:\\projects\\skills"
@@ -282,15 +551,36 @@
     {
       "name": "acceptance-criteria-designer",
       "description": "Draft, refine, normalize, critique, and convert acceptance criteria from user stories, PRDs, requirements, use cases, business rules, tickets, or existing criteria. Use when Codex needs to turn product behavior into testable Gherkin, TDD-style, or sentence-based acceptance criteria, identify assumptions and coverage gaps, or return a JSON contract aligned to the bundled schemas.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "analysis",
+      "risk": "low",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "acceptance-criteria-design",
+        "requirements-clarification",
+        "criteria-format-conversion"
+      ],
+      "accepted_intents": [
+        "design_acceptance_criteria",
+        "review_acceptance_criteria",
+        "convert_acceptance_criteria"
+      ],
+      "input_artifacts": [
+        "requirements",
+        "user_story",
+        "acceptance_criteria",
+        "product_constraints"
+      ],
+      "output_artifacts": [
+        "acceptance_criteria",
+        "criteria_review",
+        "normalized_criteria_json"
+      ],
+      "stack_tags": [
+        "analysis",
+        "testing",
+        "product"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\acceptance-criteria-designer",
       "source": "C:\\projects\\skills"
@@ -298,15 +588,36 @@
     {
       "name": "agentic-bdd-test-case-mentor",
       "description": "Review, rewrite, generate, and formally assess BDD or Gherkin feature files, scenarios, and scenario outlines from user stories, acceptance criteria, business rules, feature drafts, or example maps. Use when Codex needs to identify BDD anti-patterns, traceability or coverage gaps, weak Given-When-Then structure, overloaded scenarios, missing rule branches, or coaching-oriented improvements without drifting into framework-specific automation design.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "testing",
+      "risk": "low",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "bdd-review",
+        "bdd-generation",
+        "gherkin-mentoring"
+      ],
+      "accepted_intents": [
+        "review_bdd_test_cases",
+        "generate_bdd_test_cases",
+        "rewrite_bdd_test_cases"
+      ],
+      "input_artifacts": [
+        "requirements",
+        "acceptance_criteria",
+        "bdd_feature",
+        "example_map"
+      ],
+      "output_artifacts": [
+        "bdd_review",
+        "improved_feature_file",
+        "coaching_report"
+      ],
+      "stack_tags": [
+        "testing",
+        "bdd",
+        "gherkin"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\agentic-bdd-test-case-mentor",
       "source": "C:\\projects\\skills"
@@ -385,15 +696,36 @@
     {
       "name": "backlog-story-generator",
       "description": "Generate structured epics, backlog-ready user stories, and ticket-import story packs from product requirements, discovery notes, workshop outputs, SOPs, existing backlog folders, or an observed codebase. Use when Codex needs to decompose scope into epics, write user stories with Gherkin acceptance criteria, preserve numbering continuity, validate the pack, or export the result to Jira, Azure DevOps, GitHub Issues, or Tulip.",
-      "category": "uncategorized",
+      "category": "analysis",
       "risk": "medium",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "backlog-generation",
+        "epic-design",
+        "story-export"
+      ],
+      "accepted_intents": [
+        "generate_backlog_stories",
+        "generate_epics",
+        "export_story_pack"
+      ],
+      "input_artifacts": [
+        "requirements",
+        "discovery_notes",
+        "backlog_context",
+        "numbering_rules"
+      ],
+      "output_artifacts": [
+        "epic_pack",
+        "story_pack",
+        "import_ready_backlog"
+      ],
+      "stack_tags": [
+        "planning",
+        "backlog",
+        "product"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\epics-user-story-generator",
       "source": "C:\\projects\\skills"
@@ -480,15 +812,36 @@
     {
       "name": "defensive-appsec-review-skill",
       "description": "Use when you need an authorized, scoped, non-destructive security review of a repository, API, web app, mobile client, infrastructure-as-code, CI/CD workflow, or AI-enabled system. Trigger for AppSec triage, OWASP-aligned review, dependency or secret exposure analysis, external scanner result consolidation, security report generation, or threat-oriented review planning, even if the user does not explicitly say \"security assessment.\" Do not use for offensive exploitation, credential abuse, persistence, stealth, destructive testing, or work outside explicit authorization and scope.",
-      "category": "uncategorized",
+      "category": "security",
       "risk": "medium",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "defensive-appsec-review",
+        "security-triage",
+        "remediation-reporting"
+      ],
+      "accepted_intents": [
+        "review_application_security",
+        "triage_security_findings",
+        "plan_security_review"
+      ],
+      "input_artifacts": [
+        "repository_context",
+        "scanner_results",
+        "architecture_notes",
+        "review_scope"
+      ],
+      "output_artifacts": [
+        "security_findings",
+        "remediation_report",
+        "review_plan"
+      ],
+      "stack_tags": [
+        "security",
+        "appsec",
+        "review"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\defensive-appsec-review-skill",
       "source": "C:\\projects\\skills"
@@ -512,15 +865,36 @@
     {
       "name": "diagram-generator",
       "description": "Author grounded Mermaid-first software diagrams and compact documentation bundles from code, requirements, architecture notes, schemas, ADRs, incident timelines, and repository context. Use when Codex needs to choose the right diagram type, turn source material into a readable architecture, workflow, state, sequence, package, class, or data model diagram, or document a system or codebase visually. Do not use for pure rendering, theming, or batch export of existing Mermaid files; hand those tasks to $pretty-mermaid.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "documentation",
+      "risk": "low",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "diagram-generation",
+        "architecture-visualization",
+        "mermaid-authoring"
+      ],
+      "accepted_intents": [
+        "generate_architecture_diagram",
+        "generate_workflow_diagram",
+        "document_system_visually"
+      ],
+      "input_artifacts": [
+        "requirements",
+        "architecture_notes",
+        "code_context",
+        "data_model"
+      ],
+      "output_artifacts": [
+        "diagram_source",
+        "diagram_bundle",
+        "architecture_summary"
+      ],
+      "stack_tags": [
+        "documentation",
+        "mermaid",
+        "architecture"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\diagram-generator",
       "source": "C:\\projects\\skills"
@@ -672,15 +1046,36 @@
     {
       "name": "functional-analysis-meta-skill",
       "description": "Use when you need to research, scaffold, and categorize new AI agent skills or autonomous loops for functional analysis, incorporating GitHub precedents and human ideas.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "analysis",
+      "risk": "low",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "functional-analysis-skill-research",
+        "skill-scaffolding",
+        "skill-categorization"
+      ],
+      "accepted_intents": [
+        "research_functional_analysis_skills",
+        "scaffold_functional_analysis_skill",
+        "categorize_functional_analysis_skill"
+      ],
+      "input_artifacts": [
+        "human_ideas",
+        "repository_context",
+        "precedent_links",
+        "scope_notes"
+      ],
+      "output_artifacts": [
+        "skill_research_summary",
+        "skill_scaffold",
+        "category_map"
+      ],
+      "stack_tags": [
+        "meta-skill",
+        "planning",
+        "functional-analysis"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\FunctionalAnalysisMetaSkill-skill",
       "source": "C:\\projects\\skills"
@@ -831,14 +1226,35 @@
     {
       "name": "modern-dependency-guard",
       "description": "Review, validate, and modernize technology choices before suggesting code that depends on external packages, frameworks, SDKs, CLIs, or hosted services. Use when Codex must choose a stack, sanity-check a requested dependency, replace deprecated tooling, explain safer modern alternatives, or scan a Node.js package manifest for outdated choices.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "analysis",
+      "risk": "low",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
+      "capabilities": [
+        "dependency-review",
+        "stack-modernization",
+        "manifest-analysis"
+      ],
+      "accepted_intents": [
+        "review_dependencies",
+        "modernize_dependency_choices",
+        "scan_package_manifest"
+      ],
+      "input_artifacts": [
+        "package_manifest",
+        "dependency_request",
+        "repository_context",
+        "technology_constraints"
+      ],
+      "output_artifacts": [
+        "dependency_review",
+        "modernization_recommendations",
+        "manifest_findings"
+      ],
+      "stack_tags": [
+        "analysis",
+        "dependencies",
+        "architecture"
+      ],
       "writes_files": false,
       "manual_only": false,
       "location": "C:\\projects\\skills\\modern-dependency-guard",
@@ -936,15 +1352,36 @@
     {
       "name": "performance-testing-skill",
       "description": "Use when Codex needs to plan, validate, execute, or analyze performance testing for an API, web application, service, worker, or distributed system. Trigger for requests involving load tests, stress tests, spike tests, endurance tests, scalability analysis, latency/throughput validation, performance regression checks, SLO verification, capacity planning, bottleneck analysis, or performance reporting. Do not use for destructive denial-of-service activity, unauthorized production saturation, or unscoped traffic generation.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "testing",
+      "risk": "high",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "performance-test-planning",
+        "performance-test-analysis",
+        "load-test-reporting"
+      ],
+      "accepted_intents": [
+        "plan_performance_test",
+        "analyze_performance_results",
+        "review_performance_strategy"
+      ],
+      "input_artifacts": [
+        "performance_scope",
+        "environment_constraints",
+        "slos",
+        "traffic_model"
+      ],
+      "output_artifacts": [
+        "performance_test_plan",
+        "execution_analysis",
+        "performance_report"
+      ],
+      "stack_tags": [
+        "testing",
+        "performance",
+        "nonfunctional"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\performance-testing-skill",
       "source": "C:\\projects\\skills"
@@ -1026,15 +1463,36 @@
     {
       "name": "principal-audit-refactor",
       "description": "Audit a local software project, produce a severity-ranked engineering review, and execute an approval-gated refactor plan. Use when Codex needs to assess prototype-quality or inconsistent codebases, run stack-aware checks, write timestamped audit artifacts, and then implement production-grade improvements with explicit safety boundaries, report contracts, and refactoring discipline.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "analysis",
+      "risk": "high",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "code-audit",
+        "refactor-planning",
+        "approval-gated-refactor"
+      ],
+      "accepted_intents": [
+        "audit_codebase",
+        "plan_refactor",
+        "execute_approved_refactor"
+      ],
+      "input_artifacts": [
+        "repository_context",
+        "audit_scope",
+        "codebase_metrics",
+        "approval_state"
+      ],
+      "output_artifacts": [
+        "audit_report",
+        "refactor_plan",
+        "refactor_summary"
+      ],
+      "stack_tags": [
+        "analysis",
+        "refactor",
+        "engineering-review"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\principal-audit-refactor",
       "source": "C:\\projects\\skills"
@@ -1074,15 +1532,36 @@
     {
       "name": "responsive-testing",
       "description": "Use when an agent must plan, add, extend, or run responsive frontend testing across phones, tablets, laptops, desktops, or large screens, reuse existing tests before creating new ones, and generate a normalized responsive testing report in markdown, json, or html.",
-      "category": "uncategorized",
+      "category": "testing",
       "risk": "medium",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "responsive-test-planning",
+        "responsive-test-execution",
+        "responsive-reporting"
+      ],
+      "accepted_intents": [
+        "plan_responsive_tests",
+        "run_responsive_tests",
+        "report_responsive_results"
+      ],
+      "input_artifacts": [
+        "responsive_scope",
+        "viewport_matrix",
+        "test_suite",
+        "environment_context"
+      ],
+      "output_artifacts": [
+        "responsive_plan",
+        "responsive_results",
+        "responsive_report"
+      ],
+      "stack_tags": [
+        "testing",
+        "responsive",
+        "frontend"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\responsive-testing",
       "source": "C:\\projects\\skills"
@@ -1148,15 +1627,36 @@
     {
       "name": "shared-memory",
       "description": "Deliberately assess, retrieve, validate, write, or deprecate persistent cross-agent knowledge that should be reused across multiple agents, skills, or repositories. Use when Codex needs a durable shared ledger for stable conventions, reusable prompt patterns, organization-wide defaults, or broad operating guardrails. Do not use for runtime notes, task plans, repo-local context, secrets, or speculative observations.",
-      "category": "uncategorized",
+      "category": "governance",
       "risk": "medium",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "shared-policy-management",
+        "memory-curation",
+        "durable-convention-storage"
+      ],
+      "accepted_intents": [
+        "read_shared_policy",
+        "write_shared_policy",
+        "deprecate_shared_policy"
+      ],
+      "input_artifacts": [
+        "memory_query",
+        "policy_candidate",
+        "validation_evidence",
+        "deprecation_request"
+      ],
+      "output_artifacts": [
+        "shared_policy_entry",
+        "policy_lookup_result",
+        "deprecation_record"
+      ],
+      "stack_tags": [
+        "memory",
+        "governance",
+        "cross-project"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\shared-memory",
       "source": "C:\\projects\\skills"
@@ -1253,15 +1753,36 @@
     {
       "name": "test-analysis-skill",
       "description": "Use when reviewing use cases, user stories, acceptance criteria, business requirements, or functional specifications for testability, ambiguity, requirement quality, delivery risk, or missing stakeholder decisions before implementation or detailed test design. Use for static requirement reviews, risk-based analysis, and readiness triage. Do not use when the primary goal is writing executable test cases or application code.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "analysis",
+      "risk": "low",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "requirements-test-analysis",
+        "ambiguity-review",
+        "delivery-risk-analysis"
+      ],
+      "accepted_intents": [
+        "analyze_requirements_for_testability",
+        "review_requirement_quality",
+        "assess_delivery_risk"
+      ],
+      "input_artifacts": [
+        "requirements",
+        "acceptance_criteria",
+        "business_rules",
+        "project_context"
+      ],
+      "output_artifacts": [
+        "analysis_report",
+        "ambiguity_findings",
+        "risk_summary"
+      ],
+      "stack_tags": [
+        "analysis",
+        "testing",
+        "requirements"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\test-analysis-skill",
       "source": "C:\\projects\\skills"
@@ -1349,15 +1870,36 @@
     {
       "name": "testing-meta-skill",
       "description": "Use when you need to research, scaffold, and categorize new AI agent skills or autonomous loops for software testing, incorporating GitHub precedents and human ideas.",
-      "category": "uncategorized",
-      "risk": "medium",
+      "category": "analysis",
+      "risk": "low",
       "tags": [],
-      "capabilities": [],
-      "accepted_intents": [],
-      "input_artifacts": [],
-      "output_artifacts": [],
-      "stack_tags": [],
-      "writes_files": false,
+      "capabilities": [
+        "testing-skill-research",
+        "skill-scaffolding",
+        "testing-skill-categorization"
+      ],
+      "accepted_intents": [
+        "research_testing_skills",
+        "scaffold_testing_skill",
+        "categorize_testing_skill"
+      ],
+      "input_artifacts": [
+        "human_ideas",
+        "repository_context",
+        "precedent_links",
+        "scope_notes"
+      ],
+      "output_artifacts": [
+        "skill_research_summary",
+        "skill_scaffold",
+        "category_map"
+      ],
+      "stack_tags": [
+        "meta-skill",
+        "planning",
+        "testing"
+      ],
+      "writes_files": true,
       "manual_only": false,
       "location": "C:\\projects\\skills\\TestingMetaSkill-skill",
       "source": "C:\\projects\\skills"
