@@ -34,5 +34,6 @@ Thumbs.db
 # Skill artifacts
 # Exclude auto-generated or personal registry files
 skills/skill-dispatcher/registry/SKILL_REGISTRY.md
+skills/skill-dispatcher/registry/SKILL_REGISTRY.json
 skills/skill-dispatcher/memory/
 *.log
