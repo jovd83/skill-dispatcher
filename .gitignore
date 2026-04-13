@@ -35,7 +35,9 @@ Thumbs.db
 # Exclude auto-generated or personal registry/log files
 skills/skill-dispatcher/registry/SKILL_REGISTRY.md
 skills/skill-dispatcher/registry/SKILL_REGISTRY.json
-skills/skill-dispatcher/logs/
+skills/skill-dispatcher/logs/*
+!skills/skill-dispatcher/logs/dispatch_events.jsonl
+!skills/skill-dispatcher/logs/.gitkeep
 skills/skill-dispatcher/reports/
 skills/skill-dispatcher/evals/
 skills/skill-dispatcher/memory/
