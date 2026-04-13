@@ -418,67 +418,82 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             const wall = document.getElementById('wallboard');
             wall.innerHTML = '';
             
-            const total = TREEMAP_DATA.reduce((acc, curr) => acc + curr.count, 0);
+            const data = TREEMAP_DATA.map(d => ({{ ...d }}));
+            const total = data.reduce((acc, curr) => acc + curr.count, 0);
             if (total === 0) return;
 
             const width = wall.clientWidth;
             const height = wall.clientHeight;
-            
-            let x = 0;
-            let y = 0;
-            let remainingWidth = width;
-            let remainingHeight = height;
-            let currentSum = total;
+            const totalArea = width * height;
+            data.forEach(d => d.area = (d.count / total) * totalArea);
 
-            TREEMAP_DATA.forEach((item, index) => {{
-                const tile = document.createElement('div');
-                tile.className = 'wall-tile';
-                
-                // The portion of the CURRENT remaining area this item should take
-                const portion = item.count / currentSum;
-                
-                let tileWidth, tileHeight;
-                
-                if (remainingWidth > remainingHeight) {{
-                    tileWidth = remainingWidth * portion;
-                    if (index === TREEMAP_DATA.length - 1) tileWidth = remainingWidth;
-                    tileHeight = remainingHeight;
-                    tile.style.left = x + 'px';
-                    tile.style.top = y + 'px';
-                    tile.style.width = tileWidth + 'px';
-                    tile.style.height = tileHeight + 'px';
-                    x += tileWidth;
-                    remainingWidth -= tileWidth;
-                }} else {{
-                    tileWidth = remainingWidth;
-                    tileHeight = remainingHeight * portion;
-                    if (index === TREEMAP_DATA.length - 1) tileHeight = remainingHeight;
-                    tile.style.left = x + 'px';
-                    tile.style.top = y + 'px';
-                    tile.style.width = tileWidth + 'px';
-                    tile.style.height = tileHeight + 'px';
-                    y += tileHeight;
-                    remainingHeight -= tileHeight;
+            function squarify(elements, row, w, h, x, y) {{
+                if (elements.length === 0) {{
+                    if (row.length > 0) layoutRow(row, w, h, x, y);
+                    return;
                 }}
 
-                // Aesthetic enhancements
-                const hue = 20 + (index * 15) % 360; 
-                const saturation = 30 + (item.count / total) * 40;
-                const lightness = 95 - (item.count / total) * 10;
-                tile.style.background = `hsl(${{hue}}, ${{saturation}}%, ${{lightness}}%)`;
-                tile.style.borderLeft = `4px solid hsl(${{hue}}, ${{saturation + 20}}%, 40%)`;
+                const next = elements[0];
+                const newRow = [...row, next];
+                
+                if (worst(row, w, h) >= worst(newRow, w, h)) {{
+                    squarify(elements.slice(1), newRow, w, h, x, y);
+                }} else {{
+                    const [nx, ny, nw, nh] = layoutRow(row, w, h, x, y);
+                    squarify(elements, [], nw, nh, nx, ny);
+                }}
+            }}
 
-                const area = parseFloat(tile.style.width) * parseFloat(tile.style.height);
-                const fontSize = Math.max(10, Math.min(42, Math.sqrt(area) / 10));
-                
-                tile.innerHTML = `
-                    <div class="tile-title" style="font-size: ${{fontSize}}px">${{item.name}}</div>
-                    <div class="tile-count" style="font-size: ${{fontSize * 0.4}}px">${{item.count}} calls</div>
-                `;
-                
-                currentSum -= item.count;
-                wall.appendChild(tile);
-            }});
+            function worst(row, w, h) {{
+                if (row.length === 0) return Infinity;
+                const s = row.reduce((acc, d) => acc + d.area, 0);
+                const side = Math.min(w, h);
+                const minArea = Math.min(...row.map(d => d.area));
+                const maxArea = Math.max(...row.map(d => d.area));
+                return Math.max((side * side * maxArea) / (s * s), (s * s) / (side * side * minArea));
+            }}
+
+            function layoutRow(row, w, h, x, y) {{
+                const s = row.reduce((acc, d) => acc + d.area, 0);
+                const side = Math.min(w, h);
+                const isVertical = w > h;
+                const rowWidth = isVertical ? s / h : w;
+                const rowHeight = isVertical ? h : s / w;
+
+                let offset = 0;
+                row.forEach((item) => {{
+                    const tile = document.createElement('div');
+                    tile.className = 'wall-tile';
+                    
+                    const iW = isVertical ? rowWidth : item.area / rowHeight;
+                    const iH = isVertical ? item.area / rowWidth : rowHeight;
+                    const tX = isVertical ? x : x + offset;
+                    const tY = isVertical ? y + offset : y;
+
+                    tile.style.left = tX + 'px';
+                    tile.style.top = tY + 'px';
+                    tile.style.width = iW + 'px';
+                    tile.style.height = iH + 'px';
+
+                    const hue = (20 + (TREEMAP_DATA.findIndex(d => d.name === item.name) * 15)) % 360;
+                    const sat = 35 + (item.count / total) * 35;
+                    const lgt = 96 - (item.count / total) * 12;
+                    tile.style.background = `hsl(${{hue}}, ${{sat}}%, ${{lgt}}%)`;
+                    tile.style.borderLeft = `4px solid hsl(${{hue}}, ${{sat + 15}}%, 45%)`;
+
+                    const fontSize = Math.max(9, Math.min(36, Math.sqrt(iW * iH) / 10));
+                    tile.innerHTML = `
+                        <div class="tile-title" style="font-size: ${{fontSize}}px">${{item.name}}</div>
+                        <div class="tile-count" style="font-size: ${{fontSize * 0.45}}px">${{item.count}} calls</div>
+                    `;
+                    wall.appendChild(tile);
+                    offset += isVertical ? iH : iW;
+                }});
+
+                return isVertical ? [x + rowWidth, y, w - rowWidth, h] : [x, y + rowHeight, w, h - rowHeight];
+            }}
+
+            squarify(data, [], width, height, 0, 0);
         }}
 
         window.addEventListener('resize', () => {{
