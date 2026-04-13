@@ -41,5 +41,5 @@ skills/skill-dispatcher/logs/*
 skills/skill-dispatcher/reports/
 skills/skill-dispatcher/evals/
 skills/skill-dispatcher/memory/
-skills/skill-dispatcher/config/settings.json
+# skills/skill-dispatcher/config/settings.json
 *.log
