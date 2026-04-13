@@ -48,15 +48,20 @@ skill-dispatcher/
 ├── LICENSE                # MIT License
 ├── CONTRIBUTING.md        # How to help
 └── skills/
-    └── skill-dispatcher/  # The core AgentSkill
+    └── skill-dispatcher/  # The core AgentSkill (Self-Contained)
         ├── SKILL.md       # v2.0 Contract definition & Instructions
         ├── scripts/
-        │   └── build_registry.py  # Fast, zero-dependency discovery engine
-        ├── registry/
-        │   ├── DISPATCH_POLICY.md # Human-readable routing heuristics
-        │   ├── SKILL_REGISTRY.md  # Human-auditable skill index
-        │   └── SKILL_REGISTRY.json# Machine-readable source of truth
-        └── examples/      # Recommended reasoning scenarios
+        │   ├── build_registry.py    # Discovery engine
+        │   ├── dispatch_logger.py   # Event logger
+        │   ├── generate_wallboard.py# Dashboard generator
+        │   └── migrate_past_usage.py # History bootstrapper
+        ├── registry/      # Routing source of truth
+        ├── examples/      # Recommended scenarios
+        ├── config/        # Local settings
+        ├── logs/          # Usage history
+        ├── reports/       # Visual dashboards
+        ├── evals/         # Performance benchmarks
+        └── tests/         # Quality assurance
 ```
 
 ## 🛠️ Getting Started
@@ -93,7 +98,7 @@ python scripts/build_registry.py
 The Skill Dispatcher includes a built-in monitoring system to track skill usage frequency and rationale.
 
 ### Feature Flag
-You can toggle usage logging in `config/settings.json`:
+You can toggle usage logging in `skills/skill-dispatcher/config/settings.json`:
 ```json
 {
   "logging_enabled": true
@@ -103,31 +108,28 @@ You can toggle usage logging in `config/settings.json`:
 
 ### Skill Dispatcher Overview & Wallboard
 To generate a human-readable dashboard and wallboard:
-1. Ensure you have logs in `logs/dispatch_events.jsonl`.
+1. Ensure you have logs in `skills/skill-dispatcher/logs/dispatch_events.jsonl`.
 2. Run the generator:
    ```bash
+   cd skills/skill-dispatcher
    python scripts/generate_wallboard.py
    ```
-3. Open `reports/wallboard.html` in your browser.
+3. Open `skills/skill-dispatcher/reports/wallboard.html` in your browser.
+
 #### How it works
 
 1. **Where does the info come from?**
-The wallboard reads all its data from the `logs/dispatch_events.jsonl` file. This is a secure, local-only append-only log that stores every architectural decision, such as the intent, the selected skill, and the reasoning with impact assessments.
+The wallboard reads all its data from the `logs/dispatch_events.jsonl` file. This is a secure, local-only append-only log that stores every architectural decision.
 
 2. **Is it auto-updated?**
-**Yes!** We've implemented two layers of automation to make it perfect for a wallboard/monitor display:
-- **Auto-Generation**: Every time a skill is called (and logging is enabled), the `dispatch_logger.py` script automatically triggers the generator to update `reports/wallboard.html`. You don't need to run any commands manually.
-- **Auto-Refresh**: The HTML file includes a 30-second "heartbeat". If you leave `wallboard.html` open on a monitor or a second tab, it will automatically reload every 30 seconds to show the newest events.
-
-#### 🏁 Real-time Experience
-1. Open the [wallboard.html].
-2. Toggle to the **"Show Wallboard"** view.
-3. Leave it open.
-4. As you work and the dispatcher routes tasks, you will see the tiles resize and the activity ticker update automatically within 30 seconds.
+**Yes!** We've implemented two layers of automation:
+- **Auto-Generation**: Every time a skill is called (and logging is enabled), the `dispatch_logger.py` script automatically triggers the generator to update `reports/wallboard.html`.
+- **Auto-Refresh**: The HTML file includes a 30-second "heartbeat".
 
 ### Bootstrapping History
 If you are turning this on for the first time and want to capture past usage from your session logs, run the migration script:
 ```bash
+cd skills/skill-dispatcher
 python scripts/migrate_past_usage.py
 ```
 

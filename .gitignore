@@ -32,8 +32,12 @@ ENV/
 Thumbs.db
 
 # Skill artifacts
-# Exclude auto-generated or personal registry files
+# Exclude auto-generated or personal registry/log files
 skills/skill-dispatcher/registry/SKILL_REGISTRY.md
 skills/skill-dispatcher/registry/SKILL_REGISTRY.json
+skills/skill-dispatcher/logs/
+skills/skill-dispatcher/reports/
+skills/skill-dispatcher/evals/
 skills/skill-dispatcher/memory/
+skills/skill-dispatcher/config/settings.json
 *.log

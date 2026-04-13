@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -41,7 +42,7 @@ def main():
         "reason": args.reason
     }
 
-    # Ensure log directory exists (though I created it manually, good for robustness)
+    # Ensure log directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Append to log
@@ -52,8 +53,9 @@ def main():
     generator_path = script_dir / "scripts" / "generate_wallboard.py"
     if generator_path.exists():
         try:
-            # Run generator as a background task to avoid blocking the main dispatcher flow
-            subprocess.Popen(["python", str(generator_path)], 
+            # Run generator as a background task
+            # Use sys.executable to ensure we use the same python interpreter
+            subprocess.Popen([sys.executable, str(generator_path)], 
                              stdout=subprocess.DEVNULL, 
                              stderr=subprocess.DEVNULL)
         except Exception:
