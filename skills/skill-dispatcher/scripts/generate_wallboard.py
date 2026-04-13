@@ -419,6 +419,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             wall.innerHTML = '';
             
             const total = TREEMAP_DATA.reduce((acc, curr) => acc + curr.count, 0);
+            if (total === 0) return;
+
             const width = wall.clientWidth;
             const height = wall.clientHeight;
             
@@ -426,11 +428,14 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             let y = 0;
             let remainingWidth = width;
             let remainingHeight = height;
+            let currentSum = total;
 
             TREEMAP_DATA.forEach((item, index) => {{
                 const tile = document.createElement('div');
                 tile.className = 'wall-tile';
-                const portion = item.count / total;
+                
+                // The portion of the CURRENT remaining area this item should take
+                const portion = item.count / currentSum;
                 
                 let tileWidth, tileHeight;
                 
@@ -456,11 +461,22 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
                     remainingHeight -= tileHeight;
                 }}
 
-                const fontSize = Math.max(12, Math.min(48, (tileWidth * tileHeight) / 5000));
+                // Aesthetic enhancements
+                const hue = 20 + (index * 15) % 360; 
+                const saturation = 30 + (item.count / total) * 40;
+                const lightness = 95 - (item.count / total) * 10;
+                tile.style.background = `hsl(${{hue}}, ${{saturation}}%, ${{lightness}}%)`;
+                tile.style.borderLeft = `4px solid hsl(${{hue}}, ${{saturation + 20}}%, 40%)`;
+
+                const area = parseFloat(tile.style.width) * parseFloat(tile.style.height);
+                const fontSize = Math.max(10, Math.min(42, Math.sqrt(area) / 10));
+                
                 tile.innerHTML = `
                     <div class="tile-title" style="font-size: ${{fontSize}}px">${{item.name}}</div>
-                    <div class="tile-count" style="font-size: ${{fontSize * 0.5}}px">${{item.count}} invocations</div>
+                    <div class="tile-count" style="font-size: ${{fontSize * 0.4}}px">${{item.count}} calls</div>
                 `;
+                
+                currentSum -= item.count;
                 wall.appendChild(tile);
             }});
         }}

@@ -95,7 +95,17 @@ python scripts/build_registry.py
 
 ## 📊 Usage Monitoring
 
-The Skill Dispatcher includes a built-in monitoring system to track skill usage frequency and rationale.
+The Skill Dispatcher includes a built-in monitoring system to track skill usage frequency and rationale. It now includes robust wrappers to ensure it works correctly across different Python environments (including Windows).
+
+### Usage (Manual)
+If you need to manually log an event (e.g., when testing a specific skill routing):
+```bash
+# Windows
+.\log-dispatch.cmd --skill <skill> --intent <intent> --reason <reason>
+
+# Linux/macOS
+./log-dispatch.sh --skill <skill> --intent <intent> --reason <reason>
+```
 
 ### Feature Flag
 You can toggle usage logging in `skills/skill-dispatcher/config/settings.json`:

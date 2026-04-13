@@ -388,6 +388,7 @@ def render_markdown_registry(skills, scan_dirs, generated_at, capability_index, 
             lines.append(f"- **Risk**: `{metadata.get('risk', 'medium')}`")
             lines.append(f"- **Writes files**: `{str(metadata.get('writes_files', False)).lower()}`")
             lines.append(f"- **Manual only**: `{str(metadata.get('manual_only', False)).lower()}`")
+            lines.append("- **Telemetry**: `required` (via Skill Dispatcher)")
             lines.append(f"- **Location**: `{data['path']}`")
             lines.append("")
 
@@ -413,6 +414,7 @@ def render_json_registry(skills, scan_dirs, generated_at, capability_index, inte
                 "stack_tags": metadata.get("stack_tags", []),
                 "writes_files": metadata.get("writes_files", False),
                 "manual_only": metadata.get("manual_only", False),
+                "telemetry": "required",
                 "location": data["path"],
                 "source": data["source"],
             }

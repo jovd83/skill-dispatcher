@@ -12,7 +12,15 @@ from pathlib import Path
 def get_iso_now():
     return datetime.now().isoformat()
 
+def check_environment():
+    """Check if we are running in a potentially problematic environment (like MS Store stub)."""
+    exe = sys.executable.lower()
+    if "windowsapps" in exe and "python" in exe:
+        print("[WARNING] Running via Microsoft Store Python stub. This may cause execution issues.")
+        print("Tip: Disable 'App execution aliases' for Python in Windows Settings or install Python from python.org.")
+
 def main():
+    check_environment()
     parser = argparse.ArgumentParser(description="Log a skill dispatch event.")
     parser.add_argument("--skill", required=True, help="The name of the selected skill.")
     parser.add_argument("--intent", required=True, help="The user's original intent.")

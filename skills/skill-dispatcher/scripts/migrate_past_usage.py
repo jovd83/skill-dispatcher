@@ -15,6 +15,9 @@ SKILL_REGEX = re.compile(r"(?:\*\*|__)?Selected skill(?:\*\*|__)?:\s*(.+)", re.I
 INTENT_REGEX = re.compile(r"(?:\[Intent\]|Intent:)\s*(.+)", re.IGNORECASE)
 REASON_REGEX = re.compile(r"(?:\[Mapping\]|Reason:)\s*(.+)", re.IGNORECASE)
 
+def get_iso_now():
+    return datetime.now().isoformat()
+
 def parse_jsonl_session(file_path):
     events = []
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -47,31 +50,39 @@ def parse_jsonl_session(file_path):
     return events
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Skill Dispatch Migrator")
+    parser.add_argument("--sample", action="store_true", help="Generate sample data if none found")
+    args = parser.parse_args()
+
     print("=== Skill Dispatch Migrator ===")
     print(f"[*] Scanning sessions at: {SESSIONS_ROOT}")
     
     all_events = []
-    # Walk through year/month/day folders
-    for root, dirs, files in os.walk(SESSIONS_ROOT):
-        # print(f"[*] Scanning {root}...") # Too noisy
-        for file in files:
-            if file.endswith(".jsonl"):
-                full_path = Path(root) / file
-                events = parse_jsonl_session(full_path)
-                if events:
-                    print(f"[*] Found {len(events)} events in {file}")
-                    all_events.extend(events)
-                else:
-                    # Debug print for first 10 files
-                    if len(all_events) == 0 and "_debug_count" not in locals():
-                        _debug_count = 0
-                    if "_debug_count" in locals() and _debug_count < 5:
-                        # print(f"[-] No events in {file}")
-                        pass
+    if SESSIONS_ROOT.exists():
+        # Walk through year/month/day folders
+        for root, dirs, files in os.walk(SESSIONS_ROOT):
+            for file in files:
+                if file.endswith(".jsonl"):
+                    full_path = Path(root) / file
+                    events = parse_jsonl_session(full_path)
+                    if events:
+                        print(f"[*] Found {len(events)} events in {file}")
+                        all_events.extend(events)
 
     if not all_events:
-        print("[!] No past events found.")
-        return
+        print("[!] No past events found in session history.")
+        if args.sample:
+            print("[*] Generating sample data as requested...")
+            all_events = [
+                {"timestamp": get_iso_now(), "selected_skill": "skill-creator", "intent": "How do I make a skill?", "reason": "System bootstrap", "decision": "HANDOFF"},
+                {"timestamp": get_iso_now(), "selected_skill": "playwright-skill", "intent": "Run E2E tests", "reason": "Testing request", "decision": "HANDOFF"},
+                {"timestamp": get_iso_now(), "selected_skill": "shadcn-ui", "intent": "Add a button component", "reason": "UI request", "decision": "HANDOFF"},
+                {"timestamp": get_iso_now(), "selected_skill": "frontend-design", "intent": "Make the dashboard look premium", "reason": "Aesthetics request", "decision": "HANDOFF"}
+            ]
+        else:
+            print("[Tip] Run with --sample to generate demonstration data.")
+            return
 
     # Sort by timestamp
     all_events.sort(key=lambda x: x["timestamp"])
@@ -82,13 +93,13 @@ def main():
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Deduced counts
-    print(f"[*] Total events migrated: {len(all_events)}")
+    print(f"[*] Total events for migration: {len(all_events)}")
     
     with open(log_path, "a", encoding="utf-8") as f:
         for ev in all_events:
             f.write(json.dumps(ev) + "\n")
             
-    print(f"[*] Successfully bootstrapped usage log at: {log_path}")
+    print(f"[*] Successfully populated usage log at: {log_path}")
 
 if __name__ == "__main__":
     main()
