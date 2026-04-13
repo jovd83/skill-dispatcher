@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](https://github.com/jovd83/skill-dispatcher)
+[![Version](https://img.shields.io/badge/version-2.2.0-orange.svg)](https://github.com/jovd83/skill-dispatcher)
 [![AgentSkills Standard](https://img.shields.io/badge/AgentSkills-Standard-green.svg)](https://agentskills.io)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jovd83)
 
@@ -15,7 +15,7 @@ As an agent's skill library grows, "Skill Overload" occurs:
 -   **Inefficiency**: Routing to a broad generalist when a specialist is available.
 -   **Risk**: Accidentally invoking write-heavy skills during an analysis phase.
 
-## ✨ The Solution (v2.0)
+## ✨ The Solution (v2.2)
 
 The **Skill Dispatcher** solves this by acting as a strategic traffic controller:
 1.  **Contract-Driven Routing**: Matches by `intent`, `artifact_type`, repo-native `stack`, and `risk` allowance rather than keyword guessing.
@@ -87,6 +87,49 @@ python scripts/build_registry.py
 
 - **Local Memory**: Prioritizes skills based on repo-specific historical success.
 - **Policy Promotion**: Identifies stable routing patterns and recommends promoting them to the `shared-memory` skill for use across your entire organization.
+
+## 📊 Usage Monitoring
+
+The Skill Dispatcher includes a built-in monitoring system to track skill usage frequency and rationale.
+
+### Feature Flag
+You can toggle usage logging in `config/settings.json`:
+```json
+{
+  "logging_enabled": true
+}
+```
+*Note: Logging is enabled by default to provide audit evidence for AI Board reviews.*
+
+### Skill Dispatcher Overview & Wallboard
+To generate a human-readable dashboard and wallboard:
+1. Ensure you have logs in `logs/dispatch_events.jsonl`.
+2. Run the generator:
+   ```bash
+   python scripts/generate_wallboard.py
+   ```
+3. Open `reports/wallboard.html` in your browser.
+#### How it works
+
+1. **Where does the info come from?**
+The wallboard reads all its data from the `logs/dispatch_events.jsonl` file. This is a secure, local-only append-only log that stores every architectural decision, such as the intent, the selected skill, and the reasoning with impact assessments.
+
+2. **Is it auto-updated?**
+**Yes!** We've implemented two layers of automation to make it perfect for a wallboard/monitor display:
+- **Auto-Generation**: Every time a skill is called (and logging is enabled), the `dispatch_logger.py` script automatically triggers the generator to update `reports/wallboard.html`. You don't need to run any commands manually.
+- **Auto-Refresh**: The HTML file includes a 30-second "heartbeat". If you leave `wallboard.html` open on a monitor or a second tab, it will automatically reload every 30 seconds to show the newest events.
+
+#### 🏁 Real-time Experience
+1. Open the [wallboard.html].
+2. Toggle to the **"Show Wallboard"** view.
+3. Leave it open.
+4. As you work and the dispatcher routes tasks, you will see the tiles resize and the activity ticker update automatically within 30 seconds.
+
+### Bootstrapping History
+If you are turning this on for the first time and want to capture past usage from your session logs, run the migration script:
+```bash
+python scripts/migrate_past_usage.py
+```
 
 ## ⚖️ Core Policies
 

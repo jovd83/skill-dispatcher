@@ -3,7 +3,7 @@ name: skill-dispatcher
 description: High-performance routing engine for AI AgentSkills. Classifies user intent, scans for specialized skills, and generates optimal dispatch decisions (HANDOFF, SEQUENCE, or NO_MATCH). Use this to manage complexity in large skill environments and ensure the best-equipped skill handles every task.
 metadata:
   author: jovd83
-  version: "2.0.0"
+  version: "2.2.0"
   dispatcher-category: analysis
   dispatcher-capabilities: skill-routing, capability-discovery, contract-routing
   dispatcher-accepted-intents: route_skill_work, resolve_skill_handoff
@@ -66,7 +66,11 @@ When encoding dispatcher-specific metadata inside a `SKILL.md`, keep it under th
     - **State Alignment**: Ensure the skill's `writes_files` and `risk` flags align with the user's current environment state.
     - **Repo-Native Stack Preference**: Prefer a repository-native stack over an organization default when the repository already shows clear evidence.
     - **Logical Flow**: If a task requires analysis *before* implementation, prepare a `SEQUENCE`.
-4.  **Memory & Promotion**:
+4.  **Usage Logging**:
+    - If `config/settings.json` has `logging_enabled` set to `true`, run:
+      `python scripts/dispatch_logger.py --skill <selected_skill> --intent <intent> --reason <reason>`
+    - This logs the event AND automatically refreshes the `reports/wallboard.html` visualization.
+5.  **Memory & Promotion**:
     - Consult local `memory/routing_history.md` for repo-specific trends.
     - **Promotion**: If a routing decision proves exceptionally stable or identifies a new cross-project policy, recommend promoting the policy to the `shared-memory` skill. Do not promote repo-local routes.
 
