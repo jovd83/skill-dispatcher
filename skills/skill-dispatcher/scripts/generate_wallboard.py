@@ -35,7 +35,17 @@ def main():
 
     # Analytics
     total_calls = len(events)
-    skills_counter = Counter(ev["selected_skill"] for ev in events)
+    
+    # Explode sequences for accurate skill usage counts
+    skills_counter = Counter()
+    for ev in events:
+        raw_skill = ev.get("selected_skill", "Unknown")
+        # Split by common sequence delimiters
+        parts = [p.strip() for p in raw_skill.replace("+", ",").replace("&", ",").split(",")]
+        for p in parts:
+            if p:
+                skills_counter[p] += 1
+                
     most_used = skills_counter.most_common(1)[0] if skills_counter else ("None", 0)
     unique_skills = len(skills_counter)
     
@@ -590,7 +600,12 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
         }}
 
         function renderDetail(skillName) {{
-            const events = ALL_EVENTS.filter(e => e.selected_skill === skillName).reverse();
+            // Filter events where the skillName is either the direct match or part of a sequence string
+            const events = ALL_EVENTS.filter(e => {{
+                const s = e.selected_skill || "";
+                const parts = s.replace(/\+/g, ",").replace(/&/g, ",").split(",").map(p => p.strip ? p.strip() : p.trim());
+                return parts.includes(skillName);
+            }}).reverse();
             document.getElementById('detail-title').innerText = skillName;
             
             // Render Stats
