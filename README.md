@@ -8,6 +8,8 @@
 
 **Skill Dispatcher** is a high-performance routing and orchestration layer for AI Agent ecosystems. It utilizes a **Contract-Driven Routing** architecture to dynamically discover, classify, and sequence specialized AgentSkills, ensuring every task is handled by the most qualified capability.
 
+![Skill Dispatcher Dashboard](screenshots/skilldispatcher_overview.png)
+
 ## 🚀 The Problem
 
 As an agent's skill library grows, "Skill Overload" occurs:
@@ -104,6 +106,8 @@ If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous
 - **Merge Logic**: Heuristics strictly follow a **User-First Policy**. Manual tags in `SKILL.md` are **NEVER overwritten**; the AI only fills in empty fields (`[]`).
 - **Improvement Tip**: Ensure your skill has a high-quality natural language **Description**. The more context you provide, the better the AI can infer its capabilities.
 
+![Deep Semantic Enrichment View](screenshots/skilldispatcher_detail.png)
+
 ## 🧠 Memory & Promotion
 
 - **Local Memory**: Prioritizes skills based on repo-specific historical success.
@@ -141,6 +145,8 @@ To generate a human-readable dashboard and wallboard:
    python scripts/generate_wallboard.py
    ```
 3. Open `skills/skill-dispatcher/reports/wallboard.html` in your browser.
+
+![Skill Usage Wallboard](screenshots/skilldispatcher_wallboard.png)
 
 #### How it works
 
