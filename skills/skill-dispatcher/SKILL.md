@@ -12,6 +12,7 @@ metadata:
   dispatcher-stack-tags: routing, orchestration, registry, discovery
   dispatcher-risk: low
   dispatcher-writes-files: true
+  dispatcher-persistent-directories: logs, registry
 ---
 
 # Skill Dispatcher
