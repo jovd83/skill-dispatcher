@@ -63,6 +63,7 @@ def main():
         skills_summary=skills_counter.most_common(10),
         generated_at=utc_now(),
         treemap_json=json.dumps(treemap_data),
+        all_events_json=json.dumps(events),
         environment_info=environment_info
     )
 
@@ -72,16 +73,16 @@ def main():
 
     print(f"[*] Integrated wallboard generated at: {report_path}")
 
-def render_html(total_calls, most_used_name, most_used_count, unique_skills, recent_events, skills_summary, generated_at, treemap_json, environment_info):
+def render_html(total_calls, most_used_name, most_used_count, unique_skills, recent_events, skills_summary, generated_at, treemap_json, all_events_json, environment_info):
     leaderboard_html = "".join([
-        f'<div class="rank-row"><span>{name}</span><strong>{count}</strong></div>'
+        f'<div class="rank-row"><span class="clickable" onclick="showDetail(\'{name}\')">{name}</span><strong>{count}</strong></div>'
         for name, count in skills_summary
     ])
 
     timeline_html = "".join([
         f'<div class="event-card"> \
             <div class="time">{ev["timestamp"].split("T")[0]}</div> \
-            <div class="skill">{ev["selected_skill"]}</div> \
+            <div class="skill clickable" onclick="showDetail(\'{ev["selected_skill"]}\')">{ev["selected_skill"]}</div> \
             <div class="intent" title="{ev.get("reason", "")}">{ev["intent"]}</div> \
           </div>'
         for ev in recent_events
@@ -339,6 +340,78 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             padding: 0 40px;
             border-right: 1px solid rgba(255,255,255,0.1);
         }}
+
+        .clickable {{
+            cursor: pointer;
+            text-decoration: underline dotted;
+            text-underline-offset: 4px;
+        }}
+
+        .clickable:hover {{
+            color: var(--accent);
+        }}
+
+        /* Detail View Styles */
+        .detail-shell {{
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            z-index: 2000;
+            padding: 40px;
+            overflow-y: auto;
+        }}
+
+        body.detail-mode .container, body.detail-mode .wall-shell {{ display: none; }}
+        body.detail-mode .detail-shell {{ display: block; }}
+
+        .detail-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--line);
+        }}
+
+        .detail-stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 40px;
+        }}
+
+        .table-container {{
+            background: var(--paper);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            border: 1px solid var(--line);
+        }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }}
+
+        th {{
+            background: var(--accent-soft);
+            color: var(--accent);
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            padding: 16px 20px;
+        }}
+
+        td {{
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--line);
+        }}
+
+        tr:last-child td {{ border-bottom: none; }}
+        tr:hover td {{ background: rgba(0,0,0,0.01); }}
     </style>
 </head>
 <body id="body">
@@ -390,28 +463,114 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
         </section>
     </div>
 
-    <!-- Radiator View -->
-    <div class="wall-shell" id="radiator">
+    <!-- Wallboard View -->
+    <div class="wall-shell" id="wallboard-view">
         <div class="wall-header">
-            <h1 style="color: var(--ink)">Skill Dispatch Wallboard</h1>
-            <button class="btn" onclick="toggleRadiator()">Return to overview</button>
+            <h1>Live Skill Distribution</h1>
+            <button class="btn" onclick="goHome()">Back to Overview</button>
         </div>
         <div class="wall-grid-container" id="wallboard"></div>
-        <div class="ticker">
-            <div class="ticker-inner">
-                {"".join([f'<div class="ticker-item">Latest: {ev["selected_skill"]} for "{ev["intent"]}" &raquo; {ev.get("decision", "HANDOFF")}</div>' for ev in recent_events])}
+    </div>
+
+    <!-- Skill Detail View -->
+    <div class="detail-shell" id="details">
+        <div class="detail-header">
+            <div>
+                <span class="stat-label">Agent Capability Detail</span>
+                <h1 id="detail-title">Skill Name</h1>
             </div>
+            <button class="btn" onclick="goHome()">Back to Overview</button>
+        </div>
+        
+        <div class="detail-stats-grid" id="detail-stats"></div>
+        
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Intent</th>
+                        <th>Decision</th>
+                        <th>Reasoning</th>
+                    </tr>
+                </thead>
+                <tbody id="detail-table-body"></tbody>
+            </table>
         </div>
     </div>
 
     <script>
         const TREEMAP_DATA = {treemap_json};
+        const ALL_EVENTS = {all_events_json};
+
+        function setView(view, skill = null) {{
+            const url = new URL(window.location);
+            url.searchParams.set('view', view);
+            if (skill) url.searchParams.set('skill', skill);
+            else url.searchParams.delete('skill');
+            window.history.replaceState({{}}, '', url);
+            
+            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode');
+            
+            if (view === 'wallboard') {{
+                document.getElementById('body').classList.add('radiator-mode');
+                renderTreemap();
+            }} else if (view === 'detail') {{
+                document.getElementById('body').classList.add('detail-mode');
+                renderDetail(skill);
+            }}
+        }}
 
         function toggleRadiator() {{
-            document.getElementById('body').classList.toggle('radiator-mode');
-            if (document.getElementById('body').classList.contains('radiator-mode')) {{
-                renderTreemap();
-            }}
+            const isWall = document.getElementById('body').classList.contains('radiator-mode');
+            setView(isWall ? 'dashboard' : 'wallboard');
+        }}
+
+        function showDetail(skill) {{
+            setView('detail', skill);
+        }}
+
+        function goHome() {{
+            setView('dashboard');
+        }}
+
+        function renderDetail(skillName) {{
+            const events = ALL_EVENTS.filter(e => e.selected_skill === skillName).reverse();
+            document.getElementById('detail-title').innerText = skillName;
+            
+            // Render Stats
+            const lastSeen = events.length > 0 ? events[0].timestamp.split('T')[0] : 'Never';
+            const intents = events.map(e => e.intent);
+            const mostCommonIntent = intents.sort((a,b) =>
+                intents.filter(v => v===a).length - intents.filter(v => v===b).length
+            ).pop() || 'None';
+
+            const statsGrid = document.getElementById('detail-stats');
+            statsGrid.innerHTML = `
+                <div class="card">
+                    <span class="stat-label">Total Invocations</span>
+                    <div class="stat-value">${{events.length}}</div>
+                </div>
+                <div class="card">
+                    <span class="stat-label">Last Activity</span>
+                    <div class="stat-value" style="font-size: 1.5rem; margin-top: 10px">${{lastSeen}}</div>
+                </div>
+                <div class="card" style="grid-column: span 2">
+                    <span class="stat-label">Primary Mission</span>
+                    <div class="stat-value" style="font-size: 1.2rem; margin-top: 12px; color: var(--muted)">${{mostCommonIntent}}</div>
+                </div>
+            `;
+
+            // Render Table
+            const tbody = document.getElementById('detail-table-body');
+            tbody.innerHTML = events.map(e => `
+                <tr>
+                    <td style="color: var(--muted); font-family: monospace; font-size: 0.8rem">${{e.timestamp.replace('T', ' ').split('.')[0]}}</td>
+                    <td style="font-weight: 700">${{e.intent}}</td>
+                    <td><span style="font-size: 0.7rem; padding: 4px 8px; background: var(--accent-soft); color: var(--accent); border-radius: 4px; font-weight: 800">${{e.decision || 'HANDOFF'}}</span></td>
+                    <td style="color: var(--muted); font-size: 0.85rem">${{e.reason || e.reasoning || ''}}</td>
+                </tr>
+            `).join('');
         }}
 
         function renderTreemap() {{
@@ -481,11 +640,23 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
                     tile.style.background = `hsl(${{hue}}, ${{sat}}%, ${{lgt}}%)`;
                     tile.style.borderLeft = `4px solid hsl(${{hue}}, ${{sat + 15}}%, 45%)`;
 
-                    const fontSize = Math.max(9, Math.min(36, Math.sqrt(iW * iH) / 10));
-                    tile.innerHTML = `
-                        <div class="tile-title" style="font-size: ${{fontSize}}px">${{item.name}}</div>
-                        <div class="tile-count" style="font-size: ${{fontSize * 0.45}}px">${{item.count}} calls</div>
-                    `;
+                    const area = iW * iH;
+                    
+                    // Dynamic Font Scaling with f-string escape
+                    let fs = Math.sqrt(area) / 12;
+                    fs = Math.min(fs, iH / 2.2); 
+                    fs = Math.min(fs, iW / (item.name.length * 0.55)); 
+                    fs = Math.max(5, Math.min(42, fs)); 
+
+                    const showContent = iH > 20 && iW > 25;
+                    const showCount = iH > 45;
+
+                    tile.innerHTML = showContent ? `
+                        <div class="tile-title" style="font-size: ${{fs}}px">${{item.name}}</div>
+                        ${{showCount ? `<div class="tile-count" style="font-size: ${{fs * 0.5}}px">${{item.count}} calls</div>` : ''}}
+                    ` : '';
+                    tile.onclick = () => showDetail(item.name);
+                    tile.classList.add('clickable');
                     wall.appendChild(tile);
                     offset += isVertical ? iH : iW;
                 }});
@@ -502,10 +673,18 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             }}
         }});
 
-        // Handle URL parameters for direct deep-linking to wallboard
-        if (window.location.search.includes('view=wallboard')) {{
-            toggleRadiator();
-        }}
+        // Handle URL parameters for direct deep-linking
+        window.addEventListener('load', () => {{
+            const params = new URLSearchParams(window.location.search);
+            const view = params.get('view');
+            const skill = params.get('skill');
+            
+            if (view === 'wallboard') {{
+                setView('wallboard');
+            }} else if (view === 'detail' && skill) {{
+                setView('detail', skill);
+            }}
+        }});
     </script>
 </body>
 </html>"""
