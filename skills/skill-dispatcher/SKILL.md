@@ -99,7 +99,7 @@ Secondary skill: <skill-name or "none">
 
 Telemetry Status:
 - [Log Status] <"Logged successfully" | "Logging disabled in config">
-- [Command] `./log-dispatch.cmd --skill <skill> --intent <intent> --reason <reason>`
+- [Command] `./log-dispatch.cmd --skill <skill> --intent <intent> --reason <reason> --decision <HANDOFF|SEQUENCE>`
 
 Architectural Reasoning:
 - [Intent] <brief analysis of what the user wants>

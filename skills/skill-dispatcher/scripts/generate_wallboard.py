@@ -175,6 +175,42 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             box-shadow: 0 4px 12px rgba(170, 75, 34, 0.2);
         }}
 
+        /* Info Styles */
+        .info-trigger {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-left: 10px;
+            vertical-align: middle;
+            transition: transform 0.2s ease;
+        }}
+
+        .info-trigger:hover {{ transform: scale(1.1); font-size: 16px; }}
+
+        .info-box {{
+            display: none;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 15px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: var(--ink);
+            box-shadow: var(--shadow);
+        }}
+
+        .info-box.active {{ display: block; }}
+        .info-box strong {{ color: var(--accent); }}
+
         .grid {{
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -419,17 +455,29 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
     <div class="container" id="dashboard">
         <header>
             <div>
-                <h1>Skill Dispatcher Overview</h1>
+                <h1>Skill Dispatcher Overview <span class="info-trigger" onclick="toggleHelp()">?</span></h1>
                 <div class="timestamp">Generated on {generated_at}</div>
             </div>
             <div class="view-controls">
-                <button class="btn" onclick="toggleRadiator()">Show Wallboard</button>
+                <a href="?view=wallboard" target="_blank" class="btn">Show Wallboard (New Tab)</a>
                 <div style="text-align: right; margin-left: 20px;">
                     <span class="stat-label">System Integrity</span>
                     <span style="color: var(--olive); font-weight: 700;">● ACTIVE</span>
                 </div>
             </div>
         </header>
+
+        <section id="orchestration-help" class="info-box">
+            <h3 style="margin-top:0">The Orchestration Principles</h3>
+            <p><strong>Scenario 1: Single Orchestration (Standard)</strong><br>
+            If the AI Agent sees a task (e.g., "Create 40 items") as a single cohesive goal, it asks the Dispatcher once.
+            The Dispatcher returns a <code>HANDOFF</code>. Result: <strong>1 log entry</strong>.
+            The actual work happens inside the selected skill's loop.</p>
+            <p><strong>Scenario 2: Atomic Dispatch (Anti-Pattern)</strong><br>
+            If the AI Agent is designed to be extremely granular and asks the Dispatcher for every single item.
+            Result: <strong>40 log entries</strong>. This is "High Overhead" and should be avoided unless specialists differ per item.</p>
+            <p><em>Standard: Efficiency via Handoff. We prioritize architectural decisions over mechanical count.</em></p>
+        </section>
 
         <section class="grid">
             <div class="card">
@@ -532,6 +580,10 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
 
         function goHome() {{
             setView('dashboard');
+        }}
+
+        function toggleHelp() {{
+            document.getElementById('orchestration-help').classList.toggle('active');
         }}
 
         function renderDetail(skillName) {{

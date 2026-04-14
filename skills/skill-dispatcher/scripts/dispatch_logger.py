@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--skill", required=True, help="The name of the selected skill.")
     parser.add_argument("--intent", required=True, help="The user's original intent.")
     parser.add_argument("--reason", required=True, help="The reason for this selection.")
+    parser.add_argument("--decision", default="HANDOFF", choices=["HANDOFF", "SEQUENCE", "NO_MATCH"], help="The type of matching decision made.")
     args = parser.parse_args()
 
     # Determine paths relative to this script
@@ -47,7 +48,8 @@ def main():
         "timestamp": get_iso_now(),
         "selected_skill": args.skill,
         "intent": args.intent,
-        "reason": args.reason
+        "reason": args.reason,
+        "decision": args.decision
     }
 
     # Ensure log directory exists
