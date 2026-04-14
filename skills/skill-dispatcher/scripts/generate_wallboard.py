@@ -459,7 +459,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
                 <div class="timestamp">Generated on {generated_at}</div>
             </div>
             <div class="view-controls">
-                <a href="?view=wallboard" target="_blank" class="btn">Show Wallboard (New Tab)</a>
+                <a href="?view=wallboard" target="_blank" class="btn">Show Wallboard</a>
                 <div style="text-align: right; margin-left: 20px;">
                     <span class="stat-label">System Integrity</span>
                     <span style="color: var(--olive); font-weight: 700;">● ACTIVE</span>
@@ -468,15 +468,18 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
         </header>
 
         <section id="orchestration-help" class="info-box">
-            <h3 style="margin-top:0">The Orchestration Principles</h3>
-            <p><strong>Scenario 1: Single Orchestration (Standard)</strong><br>
-            If the AI Agent sees a task (e.g., "Create 40 items") as a single cohesive goal, it asks the Dispatcher once.
-            The Dispatcher returns a <code>HANDOFF</code>. Result: <strong>1 log entry</strong>.
-            The actual work happens inside the selected skill's loop.</p>
-            <p><strong>Scenario 2: Atomic Dispatch (Anti-Pattern)</strong><br>
-            If the AI Agent is designed to be extremely granular and asks the Dispatcher for every single item.
-            Result: <strong>40 log entries</strong>. This is "High Overhead" and should be avoided unless specialists differ per item.</p>
-            <p><em>Standard: Efficiency via Handoff. We prioritize architectural decisions over mechanical count.</em></p>
+            <h3 style="margin-top:0">The Orchestration Principle: Single Handoff</h3>
+            <p><strong>What it is:</strong> The strategy of routing a cohesive task to a single specialized skill rather than breaking it into atomic, repetitive steps. This is the architectural default for the Skill Dispatcher.</p>
+            
+            <p><strong>Example:</strong> If an agent needs to create 10 Epics and 30 User Stories, it asks the Dispatcher <em>once</em> for a "Backlog Generation" handoff. The specialist skill then handles the remaining 40 items internally.</p>
+            
+            <p><strong>Why it's Default:</strong> 
+            <ul>
+                <li><strong>Efficiency:</strong> Minimizes unnecessary routing overhead and latency.</li>
+                <li><strong>Context:</strong> Preserves the full task context within a single specialist's execution loop.</li>
+                <li><strong>Audit Integrity:</strong> Keeps the logs clean and focused on high-level architectural decisions (1 log entry) rather than mechanical noise.</li>
+            </ul>
+            </p>
         </section>
 
         <section class="grid">
