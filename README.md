@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-2.2.0-orange.svg)](https://github.com/jovd83/skill-dispatcher)
+[![Version](https://img.shields.io/badge/version-2.3.0-orange.svg)](https://github.com/jovd83/skill-dispatcher)
 [![AgentSkills Standard](https://img.shields.io/badge/AgentSkills-Standard-green.svg)](https://agentskills.io)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jovd83)
 
@@ -15,7 +15,7 @@ As an agent's skill library grows, "Skill Overload" occurs:
 -   **Inefficiency**: Routing to a broad generalist when a specialist is available.
 -   **Risk**: Accidentally invoking write-heavy skills during an analysis phase.
 
-## ✨ The Solution (v2.2)
+## ✨ The Solution (v2.3)
 
 The **Skill Dispatcher** solves this by acting as a strategic traffic controller:
 1.  **Contract-Driven Routing**: Matches by `intent`, `artifact_type`, repo-native `stack`, and `risk` allowance rather than keyword guessing.
@@ -99,7 +99,7 @@ Add `dispatcher-` tags directly to your `SKILL.md` frontmatter. This is the **pr
 - **`dispatcher-input-artifacts`**: What data/files does it consume? (e.g., `user-story`).
 
 ### 2. Semantic AI Enrichment (Manifest-Driven)
-If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous Intelligence Engine** (v2.2+) to infer them.
+If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous Intelligence Engine** (v2.3+) to infer them.
 - **The Manifest**: AI-suggested tags are stored in `skills/skill-dispatcher/config/skill_enrichments.json`. This allows the Dispatcher to be "expert-ready" immediately without you having to manually edit every skill file in your portfolio.
 - **Merge Logic**: Heuristics strictly follow a **User-First Policy**. Manual tags in `SKILL.md` are **NEVER overwritten**; the AI only fills in empty fields (`[]`).
 - **Improvement Tip**: Ensure your skill has a high-quality natural language **Description**. The more context you provide, the better the AI can infer its capabilities.

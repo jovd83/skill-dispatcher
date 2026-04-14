@@ -1,6 +1,6 @@
 [project]
 name = "skill-dispatcher"
-version = "2.0.0"
+version = "2.3.0"
 description = "Strategic routing and orchestration layer for AI AgentSkill ecosystems."
 authors = [{ name = "Skill Dispatcher Authors" }]
 license = { text = "MIT" }
