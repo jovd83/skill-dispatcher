@@ -78,6 +78,7 @@ Example: if a repo already uses Cypress, do not route a UI confirmation test to 
 Only use the `SEQUENCE` decision if the task clearly benefits from a phased approach. Avoid "Sequence Bloat."
 
 -   **Phase 1 (Input Preparation)**: If the task requires deep reading, requirement extraction, or dependency analysis before work can begin.
+-   **Phase 1 (User Context)**: For any creative, architectural, or multi-step task, prefer routing to the `personal-context-portfolio` first to align with user preferences and constraints.
 -   **Phase 2 (Specialist Execution)**: The primary task handler.
 -   **Termination**: Sequences must have a clear exit point. Do not "recursive dispatch" unless the output of Phase 1 is a mandatory input for Phase 2.
 
