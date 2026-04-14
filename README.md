@@ -88,6 +88,22 @@ cd skills/skill-dispatcher
 python scripts/build_registry.py
 ```
 
+## 💡 Improving Dispatcher Knowledge
+
+To ensure the **Skill Dispatcher** correctly routes to your skills, they need metadata. You can provide this in two ways:
+
+### 1. Manual Tagging (Source-First)
+Add `dispatcher-` tags directly to your `SKILL.md` frontmatter. This is the **primary source of truth**.
+- **`dispatcher-capabilities`**: What specialized actions can this skill perform? (e.g., `ui-testing`, `api-design`).
+- **`dispatcher-accepted-intents`**: Which specific routing intents does it handle? (e.g., `verify_logic`, `design_ui`).
+- **`dispatcher-input-artifacts`**: What data/files does it consume? (e.g., `user-story`).
+
+### 2. Semantic AI Enrichment (Manifest-Driven)
+If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous Intelligence Engine** (v2.2+) to infer them.
+- **The Manifest**: AI-suggested tags are stored in `skills/skill-dispatcher/config/skill_enrichments.json`. This allows the Dispatcher to be "expert-ready" immediately without you having to manually edit every skill file in your portfolio.
+- **Merge Logic**: Heuristics strictly follow a **User-First Policy**. Manual tags in `SKILL.md` are **NEVER overwritten**; the AI only fills in empty fields (`[]`).
+- **Improvement Tip**: Ensure your skill has a high-quality natural language **Description**. The more context you provide, the better the AI can infer its capabilities.
+
 ## 🧠 Memory & Promotion
 
 - **Local Memory**: Prioritizes skills based on repo-specific historical success.
