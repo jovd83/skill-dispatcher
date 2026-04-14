@@ -1,0 +1,349 @@
+{
+  "angular-developer": {
+    "capabilities": [
+      "angular-dev",
+      "frontend-dev",
+      "component-design"
+    ],
+    "accepted_intents": [
+      "design_ui",
+      "verify_logic"
+    ],
+    "input_artifacts": [
+      "ui-mockup",
+      "wireframe",
+      "requirements"
+    ],
+    "output_artifacts": [
+      "angular-components",
+      "ui-code"
+    ],
+    "stack_tags": [
+      "angular",
+      "typescript",
+      "rxjs",
+      "html",
+      "css"
+    ],
+    "tags": [
+      "frontend",
+      "web-app",
+      "reactive"
+    ]
+  },
+  "acceptance-criteria-designer": {
+    "capabilities": [
+      "quality-assurance",
+      "business-analysis"
+    ],
+    "accepted_intents": [
+      "analyze_requirements",
+      "generate_scenarios"
+    ],
+    "input_artifacts": [
+      "user-story",
+      "epic",
+      "prd"
+    ],
+    "output_artifacts": [
+      "gherkin-scenarios",
+      "acceptance-criteria"
+    ],
+    "stack_tags": [
+      "bdd",
+      "gherkin",
+      "agile"
+    ],
+    "tags": [
+      "qa",
+      "analysis",
+      "requirements"
+    ]
+  },
+  "backlog-story-generator": {
+    "capabilities": [
+      "backlog-management",
+      "agile-delivery",
+      "planning"
+    ],
+    "accepted_intents": [
+      "analyze_requirements",
+      "generate_backlog"
+    ],
+    "input_artifacts": [
+      "requirements-doc",
+      "braindump"
+    ],
+    "output_artifacts": [
+      "epics",
+      "user-stories",
+      "backlog-json"
+    ],
+    "stack_tags": [
+      "jira",
+      "agile",
+      "scrum"
+    ],
+    "tags": [
+      "planning",
+      "management",
+      "product"
+    ]
+  },
+  "cypress-skill": {
+    "capabilities": [
+      "ui-testing",
+      "e2e-automation",
+      "browser-control"
+    ],
+    "accepted_intents": [
+      "verify_logic",
+      "run_tests"
+    ],
+    "input_artifacts": [
+      "test-plan",
+      "ui-spec"
+    ],
+    "output_artifacts": [
+      "test-results",
+      "test-screenshots",
+      "videos"
+    ],
+    "stack_tags": [
+      "cypress",
+      "javascript",
+      "mocha",
+      "chai"
+    ],
+    "tags": [
+      "testing",
+      "automation",
+      "qa",
+      "e2e"
+    ]
+  },
+  "openapi-spec-generation": {
+    "capabilities": [
+      "api-design",
+      "contract-testing",
+      "documentation"
+    ],
+    "accepted_intents": [
+      "resolve_endpoint",
+      "analyze_requirements"
+    ],
+    "input_artifacts": [
+      "api-endpoints",
+      "json-schema"
+    ],
+    "output_artifacts": [
+      "openapi-json",
+      "swagger-yaml"
+    ],
+    "stack_tags": [
+      "openapi",
+      "swagger",
+      "rest"
+    ],
+    "tags": [
+      "api",
+      "documentation",
+      "contract"
+    ]
+  },
+  "stitch-design": {
+    "capabilities": [
+      "ui-prototyping",
+      "design-system",
+      "high-fidelity-design"
+    ],
+    "accepted_intents": [
+      "design_ui"
+    ],
+    "input_artifacts": [
+      "design-prompt",
+      "brand-colors"
+    ],
+    "output_artifacts": [
+      "stitch-json",
+      "ui-assets"
+    ],
+    "stack_tags": [
+      "stitch",
+      "design-system",
+      "css"
+    ],
+    "tags": [
+      "design",
+      "prototyping",
+      "creative"
+    ]
+  },
+  "document-extraction": {
+    "capabilities": [
+      "document-processing",
+      "ocr-data-mining",
+      "semantic-extraction"
+    ],
+    "accepted_intents": [
+      "analyze_requirements",
+      "extract_data"
+    ],
+    "input_artifacts": [
+      "pdf",
+      "image",
+      "spreadsheet"
+    ],
+    "output_artifacts": [
+      "structured-json",
+      "markdown-tables"
+    ],
+    "stack_tags": [
+      "llm-processing",
+      "ocr",
+      "vision-api"
+    ],
+    "tags": [
+      "data",
+      "nlp",
+      "extraction"
+    ]
+  },
+  "xlsx": {
+    "capabilities": [
+      "tabular-data-processing",
+      "spreadsheet-automation"
+    ],
+    "accepted_intents": [
+      "analyze_requirements",
+      "transform_data"
+    ],
+    "input_artifacts": [
+      "csv",
+      "excel-file"
+    ],
+    "output_artifacts": [
+      "summary-report",
+      "cleaned-data"
+    ],
+    "stack_tags": [
+      "excel",
+      "python-pandas",
+      "csv"
+    ],
+    "tags": [
+      "data-science",
+      "automation",
+      "reporting"
+    ]
+  },
+  "pretty-mermaid": {
+    "capabilities": [
+      "architecture-visualization",
+      "diagram-as-code"
+    ],
+    "accepted_intents": [
+      "generate_diagram"
+    ],
+    "input_artifacts": [
+      "architecture-notes",
+      "code-structure"
+    ],
+    "output_artifacts": [
+      "mermaid-mmd",
+      "svg-diagram",
+      "ascii-art"
+    ],
+    "stack_tags": [
+      "mermaid",
+      "markdown",
+      "visualization"
+    ],
+    "tags": [
+      "documentation",
+      "architecture"
+    ]
+  },
+  "react-components": {
+    "capabilities": [
+      "react-dev",
+      "component-modularity"
+    ],
+    "accepted_intents": [
+      "design_ui",
+      "scaffold_app"
+    ],
+    "input_artifacts": [
+      "ui-mockup",
+      "design-specs"
+    ],
+    "output_artifacts": [
+      "react-jsx",
+      "vite-app"
+    ],
+    "stack_tags": [
+      "react",
+      "vite",
+      "javascript",
+      "tailwind"
+    ],
+    "tags": [
+      "frontend",
+      "coding"
+    ]
+  },
+  "shadcn-ui": {
+    "capabilities": [
+      "ui-design-system",
+      "accessible-components"
+    ],
+    "accepted_intents": [
+      "design_ui"
+    ],
+    "input_artifacts": [
+      "ui-requirements"
+    ],
+    "output_artifacts": [
+      "shadcn-components"
+    ],
+    "stack_tags": [
+      "react",
+      "radix-ui",
+      "tailwind"
+    ],
+    "tags": [
+      "ui",
+      "components",
+      "accessibility"
+    ]
+  },
+  "defensive-appsec-review-skill": {
+    "capabilities": [
+      "security-audit",
+      "risk-assessment",
+      "vulnerability-triage"
+    ],
+    "accepted_intents": [
+      "audit_security",
+      "analyze_risk"
+    ],
+    "input_artifacts": [
+      "codebase",
+      "config-files"
+    ],
+    "output_artifacts": [
+      "security-report",
+      "remediation-plan"
+    ],
+    "stack_tags": [
+      "owasp",
+      "penetration-testing",
+      "sast"
+    ],
+    "tags": [
+      "security",
+      "compliance",
+      "audit"
+    ]
+  }
+}

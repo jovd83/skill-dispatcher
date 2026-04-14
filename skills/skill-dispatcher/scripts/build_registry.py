@@ -198,8 +198,19 @@ def normalize_bool(value):
     return False
 
 
-def normalize_metadata(frontmatter):
+def normalize_metadata(frontmatter, folder_name="unknown"):
     metadata = dict(frontmatter)
+    
+    # Load Semantic AI Manifest for intelligent enrichment
+    manifest_path = Path(__file__).parent.parent / "config" / "skill_enrichments.json"
+    manifest = {}
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception:
+            pass
+
     metadata_block = metadata.get("metadata", {})
     if not isinstance(metadata_block, dict):
         metadata_block = {}
@@ -207,6 +218,34 @@ def normalize_metadata(frontmatter):
     for field, metadata_key in DISPATCHER_METADATA_KEYS.items():
         if field not in metadata and metadata_key in metadata_block:
             metadata[field] = metadata_block[metadata_key]
+
+    # Semantic AI Enrichment for empty fields
+    name = metadata.get("name") or folder_name
+    
+    # Check if critical fields are empty
+    is_empty = not any([
+        metadata.get("capabilities"),
+        metadata.get("accepted_intents"),
+        metadata.get("tags")
+    ])
+    
+    # Prioritize Folder Name lookup in AI Manifest
+    enrichment = manifest.get(folder_name) or manifest.get(name)
+    
+    if is_empty and enrichment:
+        fields_to_enrich = ["capabilities", "accepted_intents", "stack_tags", "tags", "input_artifacts", "output_artifacts"]
+        
+        metadata["enrichment_count"] = 0
+        for field in fields_to_enrich:
+            if not metadata.get(field) and enrichment.get(field):
+                metadata[field] = enrichment.get(field)
+                metadata["enrichment_count"] += len(enrichment.get(field))
+        
+        # Category is a special scalar
+        if not metadata.get("category") and enrichment.get("category"):
+            metadata["category"] = enrichment.get("category")
+    else:
+        metadata["enrichment_count"] = 0
 
     metadata["category"] = normalize_category(metadata.get("category"))
     metadata["risk"] = normalize_risk(metadata.get("risk"))
@@ -307,7 +346,7 @@ def find_skills(scan_dirs):
                         print(f" [!] Skipping duplicate skill: {name} (keeping {skills[name]['path']})")
                         continue
 
-                    metadata = normalize_metadata(frontmatter)
+                    metadata = normalize_metadata(frontmatter, folder.name)
 
                     skills[name] = {
                         "name": name,
@@ -494,8 +533,11 @@ def main():
 
     print("\n--- Discovery Summary ---")
     for name in sorted(skills):
-        category = skills[name]["metadata"].get("category", "uncategorized")
-        print(f"[{category:^14}] {name}")
+        metadata = skills[name]["metadata"]
+        category = metadata.get("category", "uncategorized")
+        enrichment = metadata.get("enrichment_count", 0)
+        enrich_star = f"(+{enrichment} tags inferred)" if enrichment > 0 else "(Manual)"
+        print(f"[{category:^14}] {name:<35} {enrich_star}")
     print("--------------------------\n")
 
 

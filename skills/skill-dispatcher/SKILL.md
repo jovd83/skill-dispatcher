@@ -60,6 +60,7 @@ When encoding dispatcher-specific metadata inside a `SKILL.md`, keep it under th
 1.  **Usage Logging (MANDATORY)**:
     - Check `config/settings.json`. If `logging_enabled` is `true`, **YOU MUST** run this command before providing your final answer:
       `./log-dispatch.cmd --skill <selected_skill> --intent <intent> --reason <reason>` (or `./log-dispatch.sh` on Linux)
+    - **MANDATORY TOOL SEQUENCING**: This command MUST be either the single tool call in the turn, or the **VERY FIRST tool call** in a sequence of tool calls. Never perform specialized work (writing files, running tests) in a turn where a dispatch log is promised but not yet executed.
     - This ensures the [wallboard.html](reports/wallboard.html) is refreshed and usage analytics are accurate.
 2.  **Registry Refresh**:
     Run `python scripts/build_registry.py` if you suspect the ecosystem has changed or new skills were added.
@@ -125,3 +126,4 @@ Handoff Payload:
 - **PREFER SAFETY**: When in doubt, route to an analytical or read-only skill first.
 - **VERIFY PATHS**: Ensure any files passed in the "Handoff Payload" actually exist in the current workspace.
 - **NO HARDCODED ECOSYSTEM COUPLING**: Prefer capability-based discovery over direct references to sibling skill paths. Direct paths are a fallback only.
+- **ATOMIC DISPATCH**: Always include the `log-dispatch.cmd` command as the **VERY FIRST** tool call in the turn where a dispatch decision is made. Never perform implementation tool calls (like `write_to_file` or `run_command`) in a turn that *promises* a log but doesn't *execute* it.
