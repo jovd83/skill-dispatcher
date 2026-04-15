@@ -27,17 +27,31 @@ def main():
 
     events = []
     
-    # Safe Zone Discovery
-    persistent_log_path = Path.home() / ".agents" / "logs" / "skill-dispatcher" / "dispatch_events.jsonl"
+    # Safe Zone Discovery & Smart Migration
+    persistent_log_dir = Path.home() / ".agents" / "logs" / "skill-dispatcher"
+    persistent_log_path = persistent_log_dir / "dispatch_events.jsonl"
     local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
     
-    # Priority: 
-    # 1. Force Safe Zone if in installed context
-    # 2. Local path (for local development)
-    # 3. Safe Zone fallback (for hybrid environments)
+    # Priority & Logic:
+    # 1. If in .agents installation:
+    #    - If local exists AND NO persistent: migrate local -> persistent
+    #    - Always use persistent if it exists
+    # 2. Otherwise use local if it exists
+    # 3. Fallback to persistent
     
     if ".agents" in str(script_dir.resolve()).lower():
-        actual_log_path = persistent_log_path
+        if local_log_path.exists() and not persistent_log_path.exists():
+            persistent_log_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                import shutil
+                shutil.copy2(local_log_path, persistent_log_path)
+                print(f"[*] Migrated logs to Safe Zone: {persistent_log_path}")
+            except Exception: pass
+        
+        if persistent_log_path.exists():
+            actual_log_path = persistent_log_path
+        else:
+            actual_log_path = local_log_path
     elif local_log_path.exists():
         actual_log_path = local_log_path
     else:

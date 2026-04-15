@@ -33,14 +33,23 @@ def main():
     config_path = script_dir / "config" / "settings.json"
     
     # SAFE ZONE: Persistent log location outside of the skill installation folder.
-    # This survives 'npx skills add' which deletes the entire skill directory.
     persistent_log_dir = Path.home() / ".agents" / "logs" / "skill-dispatcher"
+    persistent_log_path = persistent_log_dir / "dispatch_events.jsonl"
     local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
     
-    # If we are in an installation context (~/.agents/skills/...), 
-    # we MANDATE the safe zone log.
+    # Smart Discovery & Migration
     if ".agents" in str(script_dir.resolve()).lower():
-        log_path = persistent_log_dir / "dispatch_events.jsonl"
+        # If we have local logs but NO persistent logs yet, migrate them to the Safe Zone
+        if local_log_path.exists() and not persistent_log_path.exists():
+            persistent_log_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                import shutil
+                shutil.copy2(local_log_path, persistent_log_path)
+                print(f"[*] Migrated logs to Safe Zone: {persistent_log_path}")
+            except Exception as e:
+                print(f"[!] Warning: Automatic migration failed: {e}")
+        
+        log_path = persistent_log_path
         if not log_path.parent.exists():
             log_path.parent.mkdir(parents=True, exist_ok=True)
     else:
