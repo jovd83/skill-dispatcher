@@ -60,7 +60,7 @@ skill-dispatcher/
 
 ## 🛠️ Getting Started
 
-### Installation
+### 1. Installation
 
 You can install this skill locally or from a GitHub repository:
 
@@ -74,12 +74,28 @@ npx skills add C:\projects\skills\Skill-dispatcher --skill skill-dispatcher
 npx skills add <username>/skill-dispatcher --skill skill-dispatcher
 ```
 
-### Refreshing the Registry
+### 2. Initial Setup (Mandatory)
 
-Whenever you add or modify a skill in your ecosystem, refresh the registry:
+Before your first use, you **must** build the initial skill index. This scans your environment and creates the routing registry:
+
 ```bash
+# 1. Build the Registry
 python scripts/build_registry.py
+
+# 2. (Optional) Audit your portfolio for logging compliance
+python scripts/enforce_telemetry.py --patch
+
+# 3. (Optional) Bootstrap historical usage from session logs
+python scripts/migrate_past_usage.py
 ```
+
+### 3. Verification
+
+Generate your first wallboard to ensure the dispatcher sees your configured environment:
+```bash
+python scripts/generate_wallboard.py
+```
+Open `reports/wallboard.html` to confirm your skill distribution is visible.
 
 ## 💡 Improving Dispatcher Knowledge
 
