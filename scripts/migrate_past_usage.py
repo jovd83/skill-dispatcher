@@ -90,11 +90,11 @@ def main():
     # Output path
     script_dir = Path(__file__).parent.parent
     
-    # Persistent log location check
+    # Safe Zone Priority
     persistent_log_dir = Path.home() / ".agents" / "logs" / "skill-dispatcher"
     local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
     
-    if ".agents" in str(script_dir.resolve()) or not local_log_path.parent.exists():
+    if ".agents" in str(script_dir.resolve()).lower():
         log_path = persistent_log_dir / "dispatch_events.jsonl"
     else:
         log_path = local_log_path

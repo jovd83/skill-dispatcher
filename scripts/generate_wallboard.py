@@ -19,18 +19,20 @@ def main():
 
     events = []
     
-    # Persistent log location check
+    # Safe Zone Discovery
     persistent_log_path = Path.home() / ".agents" / "logs" / "skill-dispatcher" / "dispatch_events.jsonl"
+    local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
     
     # Priority: 
-    # 1. Persistent path (if in agents context)
-    # 2. Local path
-    # 3. Persistent path (fallback)
+    # 1. Force Safe Zone if in installed context
+    # 2. Local path (for local development)
+    # 3. Safe Zone fallback (for hybrid environments)
     
-    actual_log_path = log_path
-    if ".agents" in str(script_dir.resolve()) and persistent_log_path.exists():
+    if ".agents" in str(script_dir.resolve()).lower():
         actual_log_path = persistent_log_path
-    elif not log_path.exists() and persistent_log_path.exists():
+    elif local_log_path.exists():
+        actual_log_path = local_log_path
+    else:
         actual_log_path = persistent_log_path
 
     if not actual_log_path.exists():

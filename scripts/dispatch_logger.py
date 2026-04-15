@@ -32,13 +32,17 @@ def main():
     script_dir = Path(__file__).parent.parent
     config_path = script_dir / "config" / "settings.json"
     
-    # Persistent log location to survive skill updates (npx skills add deletes the skill folder)
-    # We prefer ~/.agents/logs/skill-dispatcher/
+    # SAFE ZONE: Persistent log location outside of the skill installation folder.
+    # This survives 'npx skills add' which deletes the entire skill directory.
     persistent_log_dir = Path.home() / ".agents" / "logs" / "skill-dispatcher"
     local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
     
-    if ".agents" in str(script_dir.resolve()) or not local_log_path.parent.exists():
+    # If we are in an installation context (~/.agents/skills/...), 
+    # we MANDATE the safe zone log.
+    if ".agents" in str(script_dir.resolve()).lower():
         log_path = persistent_log_dir / "dispatch_events.jsonl"
+        if not log_path.parent.exists():
+            log_path.parent.mkdir(parents=True, exist_ok=True)
     else:
         log_path = local_log_path
 
