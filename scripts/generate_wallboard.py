@@ -70,12 +70,21 @@ def main():
         md_content = staleness_report_path.read_text(encoding="utf-8")
         staleness_html = markdown_to_html(md_content)
 
+    # Decision analytics
+    decision_counter = Counter(ev.get("decision", "HANDOFF") for ev in events)
+    decision_summary = {
+        "H": decision_counter.get("HANDOFF", 0),
+        "S": decision_counter.get("SEQUENCE", 0),
+        "N": decision_counter.get("NO_MATCH", 0)
+    }
+
     # HTML Generation
     html_content = render_html(
         total_calls=total_calls,
         most_used_name=most_used[0],
         most_used_count=most_used[1],
         unique_skills=unique_skills,
+        decision_summary=decision_summary,
         recent_events=recent,
         skills_summary=skills_counter.most_common(10),
         generated_at=utc_now(),
@@ -151,7 +160,7 @@ def markdown_to_html(md: str) -> str:
         
     return "\n".join(html)
 
-def render_html(total_calls, most_used_name, most_used_count, unique_skills, recent_events, skills_summary, generated_at, treemap_json, all_events_json, environment_info, staleness_html):
+def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, recent_events, skills_summary, generated_at, treemap_json, all_events_json, environment_info, staleness_html):
     leaderboard_html = "".join([
         f'<div class="rank-row"><span class="clickable" onclick="showDetail(\'{name}\')">{name}</span><strong>{count}</strong></div>'
         for name, count in skills_summary
@@ -160,6 +169,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
     timeline_html = "".join([
         f'<div class="event-card"> \
             <div class="time">{ev["timestamp"].split("T")[0]}</div> \
+            <div class="badge {ev.get("decision", "HANDOFF").lower()}">{ev.get("decision", "HANDOFF")[0]}</div> \
             <div class="skill clickable" onclick="showDetail(\'{ev["selected_skill"]}\')">{ev["selected_skill"]}</div> \
             <div class="intent" title="{ev.get("reason", "")}">{ev["intent"]}</div> \
           </div>'
@@ -350,12 +360,29 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             padding: 16px;
             margin-bottom: 12px;
             display: grid;
-            grid-template-columns: 120px 180px 1fr;
+            grid-template-columns: 100px 40px 180px 1fr;
             align-items: center;
+            gap: 15px;
         }}
 
+        .badge {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            color: white;
+        }}
+
+        .badge.handoff {{ background: var(--olive); }}
+        .badge.sequence {{ background: var(--gold); }}
+        .badge.no_match {{ background: var(--muted); }}
+
         .time {{ color: var(--muted); font-size: 0.85rem; }}
-        .skill {{ font-weight: 700; color: var(--accent); }}
+        .skill {{ font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
         .intent {{ font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
 
         /* Radiator Mode Styles */
@@ -586,13 +613,12 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
                 <div class="stat-value">{total_calls}</div>
             </div>
             <div class="card">
-                <span class="stat-label">Unique Capabilities</span>
-                <div class="stat-value">{unique_skills}</div>
+                <span class="stat-label">Decision Calls (H/S/N)</span>
+                <div class="stat-value"><span style="color:var(--olive)">{decision_summary['H']}</span>/<span style="color:var(--gold)">{decision_summary['S']}</span>/<span style="color:var(--muted)">{decision_summary['N']}</span></div>
             </div>
             <div class="card">
-                <span class="stat-label">Most Used Specialist</span>
-                <div class="stat-value accent-text" style="font-size: 1.5rem; margin-top: 15px;">{most_used_name}</div>
-                <div style="color: var(--muted); font-size: 0.8rem; margin-top: 4px;">{most_used_count} invocations</div>
+                <span class="stat-label">Unique Capabilities</span>
+                <div class="stat-value">{unique_skills}</div>
             </div>
         </section>
 
