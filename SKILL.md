@@ -65,9 +65,10 @@ When encoding dispatcher-specific metadata inside a `SKILL.md`, keep it under th
 2.  **Registry Refresh**:
     Run `python scripts/build_registry.py` if you suspect the ecosystem has changed or new skills were added.
 3.  **Capability & Policy Analysis**:
-    - Consult `registry/SKILL_REGISTRY.json` as the machine-readable source of truth.
-    - Use `registry/SKILL_REGISTRY.md` for quick human inspection and auditing.
-    - Review `registry/DISPATCH_POLICY.md` for prioritized routing heuristics.
+    - **Registry Location**: If running in an installed context (`~/.agents`), the registry is located in the **Safe Zone**: `~/.agents/logs/skill-dispatcher/registry/SKILL_REGISTRY.json`. Otherwise, look in the local `registry/` folder.
+    - Consult `SKILL_REGISTRY.json` as the machine-readable source of truth.
+    - Use `SKILL_REGISTRY.md` for quick human inspection and auditing.
+    - Review `registry/DISPATCH_POLICY.md` for prioritized routing heuristics. (Policy files remain in the installation folder).
     - **Shared Memory Check**: If the `shared-memory` skill is present, check only for stable cross-project routing policy or SOPs. Do not treat shared memory as a task-local router.
 4.  **Heuristic Evaluation**:
     - **Capability First**: Prefer exact `accepted_intents`, then matching `capabilities`, then category and tags.

@@ -14,8 +14,16 @@ def utc_now() -> str:
 def main():
     script_dir = Path(__file__).parent.parent
     log_path = script_dir / "logs" / "dispatch_events.jsonl"
-    report_path = script_dir / "reports" / "wallboard.html"
-    staleness_report_path = script_dir / "reports" / "staleness_report.md"
+    # SAFE ZONE Priority: survive 'npx skills add' updates
+    persistent_base = Path.home() / ".agents" / "logs" / "skill-dispatcher"
+    
+    if ".agents" in str(script_dir.resolve()).lower():
+        report_dir = persistent_base / "reports"
+    else:
+        report_dir = script_dir / "reports"
+        
+    report_path = report_dir / "wallboard.html"
+    staleness_report_path = report_dir / "staleness_report.md"
 
     events = []
     

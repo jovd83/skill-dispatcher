@@ -553,7 +553,15 @@ def main():
 
     current_script = Path(__file__).resolve()
     skill_root = current_script.parent.parent
-    registry_dir = skill_root / "registry"
+    
+    # SAFE ZONE Priority: survive 'npx skills add' updates
+    persistent_base = Path.home() / ".agents" / "logs" / "skill-dispatcher"
+    
+    if ".agents" in str(skill_root.resolve()).lower():
+        registry_dir = persistent_base / "registry"
+    else:
+        registry_dir = skill_root / "registry"
+        
     markdown_path = registry_dir / "SKILL_REGISTRY.md"
     json_path = registry_dir / "SKILL_REGISTRY.json"
 
