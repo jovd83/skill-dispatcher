@@ -190,7 +190,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
     timeline_html = "".join([
         f'<div class="event-card"> \
-            <div class="time">{ev["timestamp"].split("T")[0]}</div> \
+            <div class="time">{ev["timestamp"].split("T")[0]}<br><small style="opacity:0.7">{ev["timestamp"].split("T")[1].split(".")[0]}</small></div> \
             <div class="badge {ev.get("decision", "HANDOFF").lower()}">{ev.get("decision", "HANDOFF")[0]}</div> \
             <div class="skill clickable" onclick="showDetail(\'{ev["selected_skill"]}\')">{ev["selected_skill"]}</div> \
             <div class="intent" title="{ev.get("reason", "")}">{ev["intent"]}</div> \
@@ -403,7 +403,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .badge.sequence {{ background: var(--gold); }}
         .badge.no_match {{ background: var(--muted); }}
 
-        .time {{ color: var(--muted); font-size: 0.85rem; }}
+        .time {{ color: var(--muted); font-size: 0.85rem; line-height: 1.2; }}
         .skill {{ font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
         .intent {{ font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
 
