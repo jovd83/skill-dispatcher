@@ -555,7 +555,7 @@ def main():
     skill_root = current_script.parent.parent
     
     # SAFE ZONE Priority: survive 'npx skills add' updates
-    persistent_base = Path.home() / ".agents" / "logs" / "skill-dispatcher"
+    persistent_base = Path.home() / ".agents" / "dispatcher-data"
     
     if ".agents" in str(skill_root.resolve()).lower():
         registry_dir = persistent_base / "registry"
