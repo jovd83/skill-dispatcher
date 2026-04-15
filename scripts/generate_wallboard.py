@@ -710,7 +710,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             // Filter events where the skillName is either the direct match or part of a sequence string
             const events = ALL_EVENTS.filter(e => {{
                 const s = e.selected_skill || "";
-                const parts = s.replace(/\+/g, ",").replace(/&/g, ",").split(",").map(p => p.strip ? p.strip() : p.trim());
+                const parts = s.replace(/[+]/g, ",").replace(/&/g, ",").split(",").map(p => p.strip ? p.strip() : p.trim());
                 return parts.includes(skillName);
             }}).reverse();
             document.getElementById('detail-title').innerText = skillName;
