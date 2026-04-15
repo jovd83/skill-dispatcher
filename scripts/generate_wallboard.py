@@ -14,53 +14,36 @@ def utc_now() -> str:
 def main():
     script_dir = Path(__file__).parent.parent
     log_path = script_dir / "logs" / "dispatch_events.jsonl"
-    # SAFE ZONE Priority: survive 'npx skills add' updates
-    persistent_base = Path.home() / ".agents" / "logs" / "skill-dispatcher"
-    
-    if ".agents" in str(script_dir.resolve()).lower():
-        report_dir = persistent_base / "reports"
-    else:
-        report_dir = script_dir / "reports"
-        
-    report_path = report_dir / "wallboard.html"
-    staleness_report_path = report_dir / "staleness_report.md"
-
-    events = []
-    
-    # Safe Zone Discovery & Smart Migration
-    persistent_log_dir = Path.home() / ".agents" / "logs" / "skill-dispatcher"
-    persistent_log_path = persistent_log_dir / "dispatch_events.jsonl"
+    # SAFE ZONE Discovery & Smart Migration
+    persistent_base = Path.home() / ".agents" / "dispatcher-data"
+    persistent_log_path = persistent_base / "logs" / "dispatch_events.jsonl"
     local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
     
-    # Priority & Logic:
-    # 1. If in .agents installation:
-    #    - If local exists AND NO persistent: migrate local -> persistent
-    #    - Always use persistent if it exists
-    # 2. Otherwise use local if it exists
-    # 3. Fallback to persistent
-    
+    # Context-Aware Paths
     if ".agents" in str(script_dir.resolve()).lower():
+        report_dir = persistent_base / "reports"
+        # Auto-Migrate: local logs -> persistent SAFE ZONE
         if local_log_path.exists() and not persistent_log_path.exists():
-            persistent_log_dir.mkdir(parents=True, exist_ok=True)
+            persistent_log_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 import shutil
                 shutil.copy2(local_log_path, persistent_log_path)
                 print(f"[*] Migrated logs to Safe Zone: {persistent_log_path}")
             except Exception: pass
         
-        if persistent_log_path.exists():
-            actual_log_path = persistent_log_path
-        else:
-            actual_log_path = local_log_path
-    elif local_log_path.exists():
-        actual_log_path = local_log_path
+        actual_log_path = persistent_log_path if persistent_log_path.exists() else local_log_path
     else:
-        actual_log_path = persistent_log_path
+        report_dir = script_dir / "reports"
+        actual_log_path = local_log_path if local_log_path.exists() else persistent_log_path
+
+    report_path = report_dir / "wallboard.html"
+    staleness_report_path = report_dir / "staleness_report.md"
 
     if not actual_log_path.exists():
         print(f"[!] No log found at {actual_log_path}. Run migration or log an event first.")
         return
 
+    events = []
     with open(actual_log_path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip() and not line.startswith("#"):
