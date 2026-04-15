@@ -32,13 +32,20 @@ ENV/
 Thumbs.db
 
 # Skill artifacts
-# Exclude auto-generated or personal registry/log files
-registry/SKILL_REGISTRY.md
-registry/SKILL_REGISTRY.json
-logs/
-reports/
+# Keep directory structure but ignore contents
+registry/*
+!registry/.gitkeep
+
+logs/*
+!logs/.gitkeep
+
+reports/*
+!reports/.gitkeep
+
 evals/*
+!evals/.gitkeep
 !evals/evals.json
+
 memory/
 skill-dispatcher-evals/
 # config/settings.json
