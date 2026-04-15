@@ -28,10 +28,19 @@ def main():
     parser.add_argument("--decision", default="HANDOFF", choices=["HANDOFF", "SEQUENCE", "NO_MATCH"], help="The type of matching decision made.")
     args = parser.parse_args()
 
-    # Determine paths relative to this script
+    # Determine paths
     script_dir = Path(__file__).parent.parent
     config_path = script_dir / "config" / "settings.json"
-    log_path = script_dir / "logs" / "dispatch_events.jsonl"
+    
+    # Persistent log location to survive skill updates (npx skills add deletes the skill folder)
+    # We prefer ~/.agents/logs/skill-dispatcher/
+    persistent_log_dir = Path.home() / ".agents" / "logs" / "skill-dispatcher"
+    local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
+    
+    if ".agents" in str(script_dir.resolve()) or not local_log_path.parent.exists():
+        log_path = persistent_log_dir / "dispatch_events.jsonl"
+    else:
+        log_path = local_log_path
 
     # Check feature flag
     if config_path.exists():

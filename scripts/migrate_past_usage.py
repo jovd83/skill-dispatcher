@@ -89,7 +89,16 @@ def main():
 
     # Output path
     script_dir = Path(__file__).parent.parent
-    log_path = script_dir / "logs" / "dispatch_events.jsonl"
+    
+    # Persistent log location check
+    persistent_log_dir = Path.home() / ".agents" / "logs" / "skill-dispatcher"
+    local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
+    
+    if ".agents" in str(script_dir.resolve()) or not local_log_path.parent.exists():
+        log_path = persistent_log_dir / "dispatch_events.jsonl"
+    else:
+        log_path = local_log_path
+        
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Deduced counts

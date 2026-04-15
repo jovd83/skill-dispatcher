@@ -17,12 +17,27 @@ def main():
     report_path = script_dir / "reports" / "wallboard.html"
     staleness_report_path = script_dir / "reports" / "staleness_report.md"
 
-    if not log_path.exists():
-        print(f"[!] No log found at {log_path}. Run migration or log an event first.")
+    events = []
+    
+    # Persistent log location check
+    persistent_log_path = Path.home() / ".agents" / "logs" / "skill-dispatcher" / "dispatch_events.jsonl"
+    
+    # Priority: 
+    # 1. Persistent path (if in agents context)
+    # 2. Local path
+    # 3. Persistent path (fallback)
+    
+    actual_log_path = log_path
+    if ".agents" in str(script_dir.resolve()) and persistent_log_path.exists():
+        actual_log_path = persistent_log_path
+    elif not log_path.exists() and persistent_log_path.exists():
+        actual_log_path = persistent_log_path
+
+    if not actual_log_path.exists():
+        print(f"[!] No log found at {actual_log_path}. Run migration or log an event first.")
         return
 
-    events = []
-    with open(log_path, "r", encoding="utf-8") as f:
+    with open(actual_log_path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip() and not line.startswith("#"):
                 try:
