@@ -1,0 +1,23 @@
+Decision: NO_MATCH
+
+Selected skill: none
+Secondary skill: none
+
+Telemetry Status:
+- [Log Status] Logged successfully
+- [Command] ./log-dispatch.cmd --skill none --intent summarize_work --reason "No specialized skill found in the registry for general work summarization." --decision NO_MATCH
+
+Architectural Reasoning:
+- [Intent] The user wants a general summary of the day's work.
+- [Mapping] While many skills can document their own output, there is no specialized AgentSkill in the current registry designed for broad session-level summarization or retrospective reporting. 
+- [Risk] Low.
+
+Handoff Payload:
+- intent: summarize_work
+- current_artifact_type: conversation_history
+- target_artifact_type: summary
+- repo_context: .
+- constraints: none
+- preferred_stack: none
+- allowed_write_risk: low
+- deliverable: none (Generalist fallback recommended)

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-2.3.0-orange.svg)](https://github.com/jovd83/skill-dispatcher)
+[![Version](https://img.shields.io/badge/version-3.0.0-orange.svg)](https://github.com/jovd83/skill-dispatcher)
 [![AgentSkills Standard](https://img.shields.io/badge/AgentSkills-Standard-green.svg)](https://agentskills.io)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jovd83)
 
@@ -15,7 +15,7 @@ As an agent's skill library grows, "Skill Overload" occurs:
 -   **Inefficiency**: Routing to a broad generalist when a specialist is available.
 -   **Risk**: Accidentally invoking write-heavy skills during an analysis phase.
 
-## ✨ The Solution (v2.3)
+## ✨ The Solution (v3.0)
 
 The **Skill Dispatcher** solves this by acting as a strategic traffic controller:
 1.  **Contract-Driven Routing**: Matches by `intent`, `artifact_type`, repo-native `stack`, and `risk` allowance rather than keyword guessing.
@@ -47,21 +47,15 @@ skill-dispatcher/
 ├── pyproject.toml         # Project metadata
 ├── LICENSE                # MIT License
 ├── CONTRIBUTING.md        # How to help
-└── skills/
-    └── skill-dispatcher/  # The core AgentSkill (Self-Contained)
-        ├── SKILL.md       # v2.0 Contract definition & Instructions
-        ├── scripts/
-        │   ├── build_registry.py    # Discovery engine
-        │   ├── dispatch_logger.py   # Event logger
-        │   ├── generate_wallboard.py# Dashboard generator
-        │   └── migrate_past_usage.py # History bootstrapper
-        ├── registry/      # Routing source of truth
-        ├── examples/      # Recommended scenarios
-        ├── config/        # Local settings
-        ├── logs/          # Usage history
-        ├── reports/       # Visual dashboards
-        ├── evals/         # Performance benchmarks
-        └── tests/         # Quality assurance
+├── SKILL.md               # v2.0 Contract definition & Instructions
+├── README.md              # Detailed documentation
+├── scripts/               # Discovery & utility engine
+├── registry/              # Routing source of truth
+├── config/                # Local settings
+├── logs/                  # Usage history
+├── reports/               # Visual dashboards
+├── evals/                 # Performance benchmarks
+└── tests/                 # Quality assurance
 ```
 
 ## 🛠️ Getting Started
@@ -84,7 +78,6 @@ npx skills add <username>/skill-dispatcher --skill skill-dispatcher
 
 Whenever you add or modify a skill in your ecosystem, refresh the registry:
 ```bash
-cd skills/skill-dispatcher
 python scripts/build_registry.py
 ```
 
@@ -94,13 +87,15 @@ To ensure the **Skill Dispatcher** correctly routes to your skills, they need me
 
 ### 1. Manual Tagging (Source-First)
 Add `dispatcher-` tags directly to your `SKILL.md` frontmatter. This is the **primary source of truth**.
+- **`dispatcher-layer`**: Defines the operational layer (e.g., `execution`, `analysis`, `feedback`). Helps the dispatcher sequence tasks correctly.
+- **`dispatcher-lifecycle`**: Indicates maturity (e.g., `active`, `sunset`, `archived`). Prevents routing to unstable or deprecated skills.
 - **`dispatcher-capabilities`**: What specialized actions can this skill perform? (e.g., `ui-testing`, `api-design`).
 - **`dispatcher-accepted-intents`**: Which specific routing intents does it handle? (e.g., `verify_logic`, `design_ui`).
 - **`dispatcher-input-artifacts`**: What data/files does it consume? (e.g., `user-story`).
 
 ### 2. Semantic AI Enrichment (Manifest-Driven)
-If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous Intelligence Engine** (v2.3+) to infer them.
-- **The Manifest**: AI-suggested tags are stored in `skills/skill-dispatcher/config/skill_enrichments.json`. This allows the Dispatcher to be "expert-ready" immediately without you having to manually edit every skill file in your portfolio.
+If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous Intelligence Engine** (v3.0+) to infer them.
+- **The Manifest**: AI-suggested tags are stored in `config/skill_enrichments.json`. This allows the Dispatcher to be "expert-ready" immediately without you having to manually edit every skill file in your portfolio.
 - **Merge Logic**: Heuristics strictly follow a **User-First Policy**. Manual tags in `SKILL.md` are **NEVER overwritten**; the AI only fills in empty fields (`[]`).
 - **Improvement Tip**: Ensure your skill has a high-quality natural language **Description**. The more context you provide, the better the AI can infer its capabilities.
 
@@ -124,7 +119,7 @@ If you need to manually log an event (e.g., when testing a specific skill routin
 ```
 
 ### Feature Flag
-You can toggle usage logging in `skills/skill-dispatcher/config/settings.json`:
+You can toggle usage logging in `config/settings.json`:
 ```json
 {
   "logging_enabled": true
@@ -134,13 +129,12 @@ You can toggle usage logging in `skills/skill-dispatcher/config/settings.json`:
 
 ### Skill Dispatcher Overview & Wallboard
 To generate a human-readable dashboard and wallboard:
-1. Ensure you have logs in `skills/skill-dispatcher/logs/dispatch_events.jsonl`.
+1. Ensure you have logs in `logs/dispatch_events.jsonl`.
 2. Run the generator:
    ```bash
-   cd skills/skill-dispatcher
    python scripts/generate_wallboard.py
    ```
-3. Open `skills/skill-dispatcher/reports/wallboard.html` in your browser.
+3. Open `reports/wallboard.html` in your browser.
 
 **1. The overview of used agentskills**
 ![Skill Dispatcher Overview](screenshots/skilldispatcher_overview.png)
@@ -164,9 +158,23 @@ The wallboard reads all its data from the `logs/dispatch_events.jsonl` file. Thi
 ### Bootstrapping History
 If you are turning this on for the first time and want to capture past usage from your session logs, run the migration script:
 ```bash
-cd skills/skill-dispatcher
 python scripts/migrate_past_usage.py
 ```
+
+## 🛠️ Toolkit & Scripts
+
+The Skill Dispatcher includes a suite of utility scripts to manage your skill portfolio and analyze usage.
+
+| Script | Purpose | When to Use | How to Use |
+| :--- | :--- | :--- | :--- |
+| `build_registry.py` | Scans for `SKILL.md` files and compiles the registry. | After adding or modifying skill metadata. | `python scripts/build_registry.py` |
+| `dispatch_logger.py` | Records skill invocation events for auditing. | Automatically via `log-dispatch.cmd`. | `python scripts/dispatch_logger.py --skill <name> ...` |
+| `generate_wallboard.py` | Generates the HTML analytics dashboard. | To force-refresh the dashboard. | `python scripts/generate_wallboard.py` |
+| `check_shared_policy.py` | Syncs global policies from `shared-memory`. | Before complex routing tasks. | `python scripts/check_shared_policy.py` |
+| `enforce_telemetry.py` | Audits/patches skills for logging compliance. | To ensure all skills have logging hooks. | `python scripts/enforce_telemetry.py [--patch]` |
+| `migrate_metadata_to_source.py` | Injects inferred tags into `SKILL.md` files. | To promote AI-suggested tags to source. | `python scripts/migrate_metadata_to_source.py [--no-dry-run]` |
+| `migrate_past_usage.py` | Recovers events from session history. | When bootstrapping a new environment. | `python scripts/migrate_past_usage.py [--sample]` |
+| `staleness_audit.py` | Identifies underused or obsolete skills. | During maintenance to prune your portfolio. | `python scripts/staleness_audit.py [--days 90]` |
 
 ## ⚖️ Core Policies
 
@@ -175,4 +183,4 @@ Our policies prioritize **Specificity over Breadth** and **Security over Speed**
 -   **Risk Alignment**: Ensures skill write-access matches the current task phase.
 -   **Stack Preference**: Favors repository-native tools over global defaults.
 
-For more details, see [DISPATCH_POLICY.md](skills/skill-dispatcher/registry/DISPATCH_POLICY.md).
+For more details, see [DISPATCH_POLICY.md](registry/DISPATCH_POLICY.md).

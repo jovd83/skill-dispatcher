@@ -1,0 +1,20 @@
+{
+  "eval_id": 1,
+  "grading": [
+    {
+      "text": "decision_is_valid",
+      "passed": true,
+      "evidence": "Decision was HANDOFF, which is a valid contract value."
+    },
+    {
+      "text": "primary_skill_related_to_security",
+      "passed": true,
+      "evidence": "Selected 'defensive-appsec-review-skill'."
+    },
+    {
+      "text": "no_conversational_filler",
+      "passed": true,
+      "evidence": "Output is a clean structured packet."
+    }
+  ]
+}

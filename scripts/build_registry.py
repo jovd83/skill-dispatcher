@@ -26,6 +26,8 @@ DISPATCHER_METADATA_KEYS = {
     "risk": "dispatcher-risk",
     "writes_files": "dispatcher-writes-files",
     "manual_only": "dispatcher-manual-only",
+    "layer": "dispatcher-layer",
+    "lifecycle": "dispatcher-lifecycle",
 }
 
 
@@ -198,6 +200,63 @@ def normalize_bool(value):
     return False
 
 
+def normalize_layer(metadata, name, folder_name):
+    """Semantic heuristic to infer the architectural layer if missing."""
+    value = metadata.get("layer")
+    if value:
+        return value.lower().strip()
+
+    # Keywords for scoring
+    info_keys = {"context", "index", "documentation", "discovery", "glossary", "metadata", "memory", "research", "loading", "portfolio"}
+    feedback_keys = {"audit", "review", "critique", "security", "checker", "inspector", "guard", "monitor", "eval", "qa", "verification", "assessment"}
+    
+    score_info = 0
+    score_feedback = 0
+    
+    # Check Name/Folder
+    id_text = f"{name} {folder_name}".lower()
+    for k in info_keys:
+        if k in id_text: score_info += 2
+    for k in feedback_keys:
+        if k in id_text: score_feedback += 2
+        
+    # Check Description
+    desc = metadata.get("description", "").lower()
+    for k in info_keys:
+        if k in desc: score_info += 1
+    for k in feedback_keys:
+        if k in desc: score_feedback += 1
+        
+    # Check Category
+    cat = metadata.get("category", "").lower()
+    if cat == "testing": score_feedback += 2
+    if cat == "security": score_feedback += 3
+    if cat == "analysis": score_info += 1
+    
+    # Check Capabilities/Intents
+    actions = " ".join(metadata.get("capabilities", []) + metadata.get("accepted_intents", [])).lower()
+    for k in info_keys:
+        if k in actions: score_info += 1
+    for k in feedback_keys:
+        if k in actions: score_feedback += 1
+
+    if score_feedback > score_info and score_feedback > 0:
+        return "feedback"
+    if score_info > 0:
+        return "information"
+        
+    return "execution" # Standard default
+
+
+def normalize_lifecycle(value):
+    if not isinstance(value, str):
+        return "active"
+    clean = value.lower().strip()
+    if clean in ("active", "sunset", "archived"):
+        return clean
+    return "active"
+
+
 def normalize_metadata(frontmatter, folder_name="unknown"):
     metadata = dict(frontmatter)
     
@@ -255,6 +314,10 @@ def normalize_metadata(frontmatter, folder_name="unknown"):
 
     for field in BOOL_FIELDS:
         metadata[field] = normalize_bool(metadata.get(field))
+
+    # New: Layer & Lifecycle Inference
+    metadata["layer"] = normalize_layer(metadata, name, folder_name)
+    metadata["lifecycle"] = normalize_lifecycle(metadata.get("lifecycle"))
 
     return metadata
 
@@ -425,6 +488,8 @@ def render_markdown_registry(skills, scan_dirs, generated_at, capability_index, 
                     lines.append(f"- **{label}**: `{', '.join(values)}`")
 
             lines.append(f"- **Risk**: `{metadata.get('risk', 'medium')}`")
+            lines.append(f"- **Layer**: `{metadata.get('layer', 'execution')}`")
+            lines.append(f"- **Lifecycle**: `{metadata.get('lifecycle', 'active')}`")
             lines.append(f"- **Writes files**: `{str(metadata.get('writes_files', False)).lower()}`")
             lines.append(f"- **Manual only**: `{str(metadata.get('manual_only', False)).lower()}`")
             lines.append("- **Telemetry**: `required` (via Skill Dispatcher)")
@@ -445,6 +510,8 @@ def render_json_registry(skills, scan_dirs, generated_at, capability_index, inte
                 "description": metadata.get("description", ""),
                 "category": metadata.get("category", "uncategorized"),
                 "risk": metadata.get("risk", "medium"),
+                "layer": metadata.get("layer", "execution"),
+                "lifecycle": metadata.get("lifecycle", "active"),
                 "tags": metadata.get("tags", []),
                 "capabilities": metadata.get("capabilities", []),
                 "accepted_intents": metadata.get("accepted_intents", []),

@@ -1,0 +1,23 @@
+Decision: HANDOFF
+
+Selected skill: defensive-appsec-review-skill
+Secondary skill: none
+
+Telemetry Status:
+- [Log Status] Logged successfully
+- [Command] ./log-dispatch.cmd --skill defensive-appsec-review-skill --intent review_application_security --reason "Exact capability match for SQLi and XSS security review." --decision HANDOFF
+
+Architectural Reasoning:
+- [Intent] The user wants a security assessment of a login flow focused on SQL injection and XSS.
+- [Mapping] 'defensive-appsec-review-skill' is the specialized specialist for OWASP-aligned reviews and AppSec triage. Its 'dispatcher-accepted-intents' includes 'review_application_security', which perfectly covers the request.
+- [Risk] Low for the dispatcher itself; the selected skill has medium risk and handles the review non-destructively.
+
+Handoff Payload:
+- intent: review_application_security
+- current_artifact_type: codebase_context
+- target_artifact_type: security_findings
+- repo_context: src/auth (implied by 'login flow')
+- constraints: non-destructive review, OWASP alignment
+- preferred_stack: none
+- allowed_write_risk: low
+- deliverable: A security findings report identifying potential SQLi and XSS vulnerabilities.

@@ -15,6 +15,7 @@ def main():
     script_dir = Path(__file__).parent.parent
     log_path = script_dir / "logs" / "dispatch_events.jsonl"
     report_path = script_dir / "reports" / "wallboard.html"
+    staleness_report_path = script_dir / "reports" / "staleness_report.md"
 
     if not log_path.exists():
         print(f"[!] No log found at {log_path}. Run migration or log an event first.")
@@ -63,6 +64,12 @@ def main():
     computer_name = platform.node()
     environment_info = f"{computer_name} / {user_name}"
 
+    # Load Staleness Report
+    staleness_html = "<i>Staleness report not found. Run scripts/staleness_audit.py first.</i>"
+    if staleness_report_path.exists():
+        md_content = staleness_report_path.read_text(encoding="utf-8")
+        staleness_html = markdown_to_html(md_content)
+
     # HTML Generation
     html_content = render_html(
         total_calls=total_calls,
@@ -74,7 +81,8 @@ def main():
         generated_at=utc_now(),
         treemap_json=json.dumps(treemap_data),
         all_events_json=json.dumps(events),
-        environment_info=environment_info
+        environment_info=environment_info,
+        staleness_html=staleness_html
     )
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,7 +91,67 @@ def main():
 
     print(f"[*] Integrated wallboard generated at: {report_path}")
 
-def render_html(total_calls, most_used_name, most_used_count, unique_skills, recent_events, skills_summary, generated_at, treemap_json, all_events_json, environment_info):
+def markdown_to_html(md: str) -> str:
+    """Basic markdown to HTML converter for staleness report."""
+    import re
+    lines = md.splitlines()
+    html = []
+    in_table = False
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            if in_table:
+                html.append("</table>")
+                in_table = False
+            continue
+
+        # Headers
+        if line.startswith("### "):
+            html.append(f"<h3>{line[4:]}</h3>")
+        elif line.startswith("## "):
+            html.append(f"<h2>{line[3:]}</h2>")
+        elif line.startswith("# "):
+            html.append(f"<h1>{line[2:]}</h1>")
+        
+        # Tables
+        elif "|" in line:
+            if not in_table:
+                html.append('<table class="audit-table">')
+                in_table = True
+            
+            # Skip separator lines
+            if "---" in line and "|" in line:
+                continue
+                
+            cells = [center.strip() for center in line.split("|") if center.strip() or center == " "]
+            if not cells: continue
+            
+            tag = "td"
+            # Logic to detect header row: if it's the first row and the next one is a separator
+            # But here we just simplified
+            
+            row_html = "<tr>" + "".join([f"<{tag}>{c}</{tag}>" for c in cells]) + "</tr>"
+            html.append(row_html)
+        
+        # Lists
+        elif line.startswith("- ") or line.startswith("* "):
+            html.append(f"<li>{line[2:]}</li>")
+        elif re.match(r'^\d+\.', line):
+            html.append(f"<li>{line[line.find('.')+1:].strip()}</li>")
+            
+        # Paragraphs / Bold
+        else:
+            line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', line)
+            line = re.sub(r'`(.*?)`', r'<code>\1</code>', line)
+            html.append(f"<p>{line}</p>")
+            
+    if in_table:
+        html.append("</table>")
+        
+    return "\n".join(html)
+
+def render_html(total_calls, most_used_name, most_used_count, unique_skills, recent_events, skills_summary, generated_at, treemap_json, all_events_json, environment_info, staleness_html):
     leaderboard_html = "".join([
         f'<div class="rank-row"><span class="clickable" onclick="showDetail(\'{name}\')">{name}</span><strong>{count}</strong></div>'
         for name, count in skills_summary
@@ -408,8 +476,22 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             overflow-y: auto;
         }}
 
+        /* Detail/Staleness View Styles */
+        .detail-shell, .staleness-shell {{
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            z-index: 2000;
+            padding: 40px;
+            overflow-y: auto;
+        }}
+
         body.detail-mode .container, body.detail-mode .wall-shell {{ display: none; }}
         body.detail-mode .detail-shell {{ display: block; }}
+
+        body.staleness-mode .container, body.staleness-mode .wall-shell {{ display: none; }}
+        body.staleness-mode .staleness-shell {{ display: block; }}
 
         .detail-header {{
             display: flex;
@@ -442,6 +524,11 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             font-size: 0.9rem;
         }}
 
+        .audit-table {{
+            margin-top: 20px;
+            margin-bottom: 40px;
+        }}
+
         th {{
             background: var(--accent-soft);
             color: var(--accent);
@@ -469,7 +556,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
                 <div class="timestamp">Generated on {generated_at}</div>
             </div>
             <div class="view-controls">
-                <a href="?view=wallboard" target="_blank" class="btn">Show Wallboard</a>
+                <a href="?view=wallboard" class="btn">Show Wallboard</a>
+                <a href="?view=staleness" class="btn">Show staleness report</a>
                 <div style="text-align: right; margin-left: 20px;">
                     <span class="stat-label">System Integrity</span>
                     <span style="color: var(--olive); font-weight: 700;">● ACTIVE</span>
@@ -560,6 +648,23 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
         </div>
     </div>
 
+    <!-- Staleness Report View -->
+    <div class="staleness-shell" id="staleness-view">
+        <div class="detail-header">
+            <div>
+                <span class="stat-label">Harness Engineering Audit</span>
+                <h1>Staleness Report</h1>
+            </div>
+            <button class="btn" onclick="goHome()">Back to Overview</button>
+        </div>
+        
+        <div class="card" style="max-width: 900px; margin: 0 auto; padding: 40px;">
+            <div id="staleness-content">
+                {staleness_html}
+            </div>
+        </div>
+    </div>
+
     <script>
         const TREEMAP_DATA = {treemap_json};
         const ALL_EVENTS = {all_events_json};
@@ -571,7 +676,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             else url.searchParams.delete('skill');
             window.history.replaceState({{}}, '', url);
             
-            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode');
+            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'staleness-mode');
             
             if (view === 'wallboard') {{
                 document.getElementById('body').classList.add('radiator-mode');
@@ -579,6 +684,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
             }} else if (view === 'detail') {{
                 document.getElementById('body').classList.add('detail-mode');
                 renderDetail(skill);
+            }} else if (view === 'staleness') {{
+                document.getElementById('body').classList.add('staleness-mode');
             }}
         }}
 
@@ -753,6 +860,22 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, rec
                 setView('wallboard');
             }} else if (view === 'detail' && skill) {{
                 setView('detail', skill);
+            }} else if (view === 'staleness') {{
+                setView('staleness');
+            }}
+        }});
+
+        // Intercept clicks to stay in the same window
+        document.addEventListener('click', e => {{
+            const link = e.target.closest('a');
+            if (link && !link.target && link.href) {{
+                const url = new URL(link.href);
+                if (url.origin === window.location.origin && url.pathname === window.location.pathname) {{
+                    e.preventDefault();
+                    const view = url.searchParams.get('view');
+                    const skill = url.searchParams.get('skill');
+                    setView(view, skill);
+                }}
             }}
         }});
     </script>

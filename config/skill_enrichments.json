@@ -1,5 +1,6 @@
 {
   "angular-developer": {
+    "layer": "execution",
     "capabilities": [
       "angular-dev",
       "frontend-dev",
@@ -32,6 +33,7 @@
     ]
   },
   "acceptance-criteria-designer": {
+    "layer": "feedback",
     "capabilities": [
       "quality-assurance",
       "business-analysis"
@@ -61,6 +63,7 @@
     ]
   },
   "backlog-story-generator": {
+    "layer": "feedback",
     "capabilities": [
       "backlog-management",
       "agile-delivery",
@@ -91,6 +94,7 @@
     ]
   },
   "cypress-skill": {
+    "layer": "execution",
     "capabilities": [
       "ui-testing",
       "e2e-automation",
@@ -123,6 +127,7 @@
     ]
   },
   "openapi-spec-generation": {
+    "layer": "feedback",
     "capabilities": [
       "api-design",
       "contract-testing",
@@ -152,6 +157,7 @@
     ]
   },
   "stitch-design": {
+    "layer": "execution",
     "capabilities": [
       "ui-prototyping",
       "design-system",
@@ -180,6 +186,7 @@
     ]
   },
   "document-extraction": {
+    "layer": "execution",
     "capabilities": [
       "document-processing",
       "ocr-data-mining",
@@ -210,6 +217,7 @@
     ]
   },
   "xlsx": {
+    "layer": "execution",
     "capabilities": [
       "tabular-data-processing",
       "spreadsheet-automation"
@@ -238,6 +246,7 @@
     ]
   },
   "pretty-mermaid": {
+    "layer": "execution",
     "capabilities": [
       "architecture-visualization",
       "diagram-as-code"
@@ -318,6 +327,7 @@
     ]
   },
   "defensive-appsec-review-skill": {
+    "layer": "feedback",
     "capabilities": [
       "security-audit",
       "risk-assessment",

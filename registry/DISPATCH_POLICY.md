@@ -125,3 +125,40 @@ If the `shared-memory` skill is active, routing should align with global organiz
 - **Repo-first exception**: Repository-native evidence still outranks a generic global default unless shared policy explicitly requires otherwise for compliance.
 - **SOPs**: Check for organization-wide Standard Operating Procedures that mandate a specific capability or sequence for compliance.
 - **Promotion**: Identifying a new, stable routing policy is a high-value insight. Recommend its promotion to shared memory only when it is reusable across repositories.
+
+## 12. Context-First Routing (Phase 0)
+
+For any task classified as `SEQUENCE` or any task involving an Execution Layer skill with `risk: high`, the dispatcher MUST prepend a Phase 0 context step:
+
+1. **Phase 0 (Context Loading)**: Route to an Information Layer skill first. Preferred order:
+   - `personal-context-portfolio` (if user preferences are relevant)
+   - `codebase-context` (if the task involves modifying an existing repository)
+   - `get-api-docs` (if the task involves external APIs)
+   - `shared-memory` (if cross-project conventions apply)
+
+2. **Phase 1+**: Proceed with the original Execution or Feedback skill.
+
+Phase 0 is **SKIPPED** for:
+- Single `HANDOFF` decisions to `risk: low` skills
+- Tasks that are purely analytical (Feedback Layer only)
+- Follow-up turns where context was already loaded in the same conversation
+
+The Phase 0 skill's output becomes part of the `repo_context` field in the handoff payload for subsequent phases.
+
+## 13. Layer-Aware Routing
+
+When a skill has a `layer` field in the registry (`information`, `execution`, or `feedback`), use it during conflict resolution:
+
+- If the user's intent is clearly **analytical** (review, audit, score, analyze), prefer skills where `layer: feedback`
+- If the user's intent is clearly **generative** (implement, create, scaffold, build), prefer skills where `layer: execution`
+- For **ambiguous** intents, default to `feedback` (prefer safety — review before act)
+
+This is especially important for **dual-layer skills** like `principal-audit-refactor`, `stack-aware-unit-testing-skill`, and `performance-testing-skill`, which accept both review and execution intents. The `layer` field signals the skill's **primary** function, guiding the dispatcher toward the correct behavioral mode.
+
+## 14. Lifecycle-Aware Routing
+
+Skills have a `lifecycle` field: `active`, `sunset`, or `archived`.
+
+- **Active**: Normal routing. No restrictions.
+- **Sunset**: The dispatcher SHOULD deprioritize this skill and log a warning when it is selected. Include a note in the routing reason: "⚠️ This skill is in sunset — verify it is still needed."
+- **Archived**: The dispatcher MUST NOT route to archived skills. Return `NO_MATCH` if the only candidate is archived, and identify the gap in the response.

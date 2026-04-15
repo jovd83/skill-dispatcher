@@ -1,6 +1,6 @@
 [project]
 name = "skill-dispatcher"
-version = "2.3.0"
+version = "3.0.0"
 description = "Strategic routing and orchestration layer for AI AgentSkill ecosystems."
 authors = [{ name = "Skill Dispatcher Authors" }]
 license = { text = "MIT" }
@@ -21,7 +21,7 @@ Repository = "https://github.com/agentskills/skill-dispatcher.git"
 Issues = "https://github.com/agentskills/skill-dispatcher/issues"
 
 [project.scripts]
-skill-dispatcher-refresh = "skills.skill-dispatcher.scripts.build_registry:main"
+skill-dispatcher-refresh = "scripts.build_registry:main"
 
 [tool.black]
 line-length = 100
