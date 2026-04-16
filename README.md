@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-3.0.0-orange.svg)](https://github.com/jovd83/skill-dispatcher)
+[![Version](https://img.shields.io/badge/version-3.0.1-orange.svg)](https://github.com/jovd83/skill-dispatcher)
 [![AgentSkills Standard](https://img.shields.io/badge/AgentSkills-Standard-green.svg)](https://agentskills.io)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jovd83)
 
@@ -15,7 +15,7 @@ As an agent's skill library grows, "Skill Overload" occurs:
 -   **Inefficiency**: Routing to a broad generalist when a specialist is available.
 -   **Risk**: Accidentally invoking write-heavy skills during an analysis phase.
 
-## ✨ The Solution (v3.0)
+## ✨ The Solution (v3.0.1)
 
 The **Skill Dispatcher** solves this by acting as a strategic traffic controller:
 1.  **Contract-Driven Routing**: Matches by `intent`, `artifact_type`, repo-native `stack`, and `risk` allowance rather than keyword guessing.
@@ -134,6 +134,12 @@ If you need to manually log an event (e.g., when testing a specific skill routin
 ./log-dispatch.sh --skill <skill> --intent <intent> --reason <reason>
 ```
 
+For `SEQUENCE` decisions, include the full ordered chain so secondary skills are counted in telemetry and staleness reporting:
+
+```bash
+.\log-dispatch.cmd --skill <primary-skill> --skills "<primary-skill>, <secondary-skill>" --intent <intent> --reason <reason> --decision SEQUENCE
+```
+
 ### Feature Flag
 You can toggle usage logging in `config/settings.json`:
 ```json
@@ -184,7 +190,7 @@ The Skill Dispatcher includes a suite of utility scripts to manage your skill po
 | Script | Purpose | When to Use | How to Use |
 | :--- | :--- | :--- | :--- |
 | `build_registry.py` | Scans for `SKILL.md` files and compiles the registry. | After adding or modifying skill metadata. | `python scripts/build_registry.py` |
-| `dispatch_logger.py` | Records skill invocation events for auditing. | Automatically via `log-dispatch.cmd`. | `python scripts/dispatch_logger.py --skill <name> ...` |
+| `dispatch_logger.py` | Records skill invocation events for auditing. | Automatically via `log-dispatch.cmd`. | `python scripts/dispatch_logger.py --skill <name> [--skills "skill-a, skill-b"] ...` |
 | `generate_wallboard.py` | Generates the HTML analytics dashboard. | To force-refresh the dashboard. | `python scripts/generate_wallboard.py` |
 | `check_shared_policy.py` | Syncs global policies from `shared-memory`. | Before complex routing tasks. | `python scripts/check_shared_policy.py` |
 | `enforce_telemetry.py` | Audits/patches skills for logging compliance. | To ensure all skills have logging hooks. | `python scripts/enforce_telemetry.py [--patch]` |

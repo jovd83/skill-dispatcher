@@ -11,6 +11,26 @@ from pathlib import Path
 from collections import Counter
 
 
+def extract_logged_skills(event):
+    """Return every skill represented by a log event."""
+    skills_used = event.get("skills_used")
+    if isinstance(skills_used, list):
+        normalized = [skill.strip() for skill in skills_used if isinstance(skill, str) and skill.strip()]
+        if normalized:
+            return normalized
+
+    legacy_skill = event.get("skill")
+    if isinstance(legacy_skill, str) and legacy_skill.strip():
+        return [legacy_skill.strip()]
+
+    selected_skill = event.get("selected_skill", "")
+    if isinstance(selected_skill, str) and selected_skill.strip():
+        normalized = selected_skill.replace("+", ",").replace("&", ",")
+        return [part.strip() for part in normalized.split(",") if part.strip()]
+
+    return []
+
+
 def load_events(log_path, cutoff_date):
     """Load dispatch events newer than cutoff_date."""
     events = []
@@ -123,7 +143,10 @@ def main():
     cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
     events = load_events(log_path, cutoff)
     all_skills = load_registry(registry_path)
-    usage = Counter(e.get("skill") for e in events if e.get("skill"))
+    usage = Counter()
+    for event in events:
+        for skill in extract_logged_skills(event):
+            usage[skill] += 1
 
     report = generate_report(all_skills, usage, args.days, cutoff)
 

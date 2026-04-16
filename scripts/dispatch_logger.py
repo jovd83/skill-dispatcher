@@ -12,6 +12,15 @@ from pathlib import Path
 def get_iso_now():
     return datetime.now().isoformat()
 
+
+def parse_skill_list(raw_value):
+    """Normalize a comma/plus/ampersand-delimited skill list."""
+    if not raw_value:
+        return []
+
+    normalized = raw_value.replace("+", ",").replace("&", ",")
+    return [part.strip() for part in normalized.split(",") if part.strip()]
+
 def check_environment():
     """Check if we are running in a potentially problematic environment (like MS Store stub)."""
     exe = sys.executable.lower()
@@ -23,6 +32,11 @@ def main():
     check_environment()
     parser = argparse.ArgumentParser(description="Log a skill dispatch event.")
     parser.add_argument("--skill", required=True, help="The name of the selected skill.")
+    parser.add_argument(
+        "--skills",
+        default="",
+        help="Comma-separated ordered list of every skill used for this dispatch.",
+    )
     parser.add_argument("--intent", required=True, help="The user's original intent.")
     parser.add_argument("--reason", required=True, help="The reason for this selection.")
     parser.add_argument("--decision", default="HANDOFF", choices=["HANDOFF", "SEQUENCE", "NO_MATCH"], help="The type of matching decision made.")
@@ -67,9 +81,14 @@ def main():
             pass # Default to enabled if error reading config
 
     # Prepare log entry
+    skills_used = parse_skill_list(args.skills) or [args.skill]
+    if args.skill not in skills_used:
+        skills_used.insert(0, args.skill)
+
     entry = {
         "timestamp": get_iso_now(),
         "selected_skill": args.skill,
+        "skills_used": skills_used,
         "intent": args.intent,
         "reason": args.reason,
         "decision": args.decision

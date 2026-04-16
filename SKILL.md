@@ -3,7 +3,7 @@ name: skill-dispatcher
 description: High-performance routing engine for AI AgentSkills. Classifies user intent, scans for specialized skills, and generates optimal dispatch decisions (HANDOFF, SEQUENCE, or NO_MATCH). Use this to manage complexity in large skill environments and ensure the best-equipped skill handles every task.
 metadata:
   author: jovd83
-  version: "3.0.0"
+  version: "3.0.1"
   dispatcher-category: analysis
   dispatcher-capabilities: skill-routing, capability-discovery, contract-routing
   dispatcher-accepted-intents: route_skill_work, resolve_skill_handoff
@@ -60,6 +60,7 @@ When encoding dispatcher-specific metadata inside a `SKILL.md`, keep it under th
 1.  **Usage Logging (MANDATORY)**:
     - Check `config/settings.json`. If `logging_enabled` is `true`, **YOU MUST** run this command before providing your final answer:
       `./log-dispatch.cmd --skill <selected_skill> --intent <intent> --reason <reason>` (or `./log-dispatch.sh` on Linux)
+    - For `SEQUENCE`, include the full ordered chain with `--skills "<primary-skill>, <secondary-skill>"` so every used skill remains fresh in telemetry and staleness audits.
     - **MANDATORY TOOL SEQUENCING**: This command MUST be either the single tool call in the turn, or the **VERY FIRST tool call** in a sequence of tool calls. Never perform specialized work (writing files, running tests) in a turn where a dispatch log is promised but not yet executed.
     - This ensures the [wallboard.html](reports/wallboard.html) is refreshed and usage analytics are accurate.
 2.  **Registry Refresh**:
@@ -104,7 +105,7 @@ Secondary skill: <skill-name or "none">
 
 Telemetry Status:
 - [Log Status] <"Logged successfully" | "Logging disabled in config">
-- [Command] `./log-dispatch.cmd --skill <skill> --intent <intent> --reason <reason> --decision <HANDOFF|SEQUENCE>`
+- [Command] `./log-dispatch.cmd --skill <skill> [--skills "<skill>, <secondary-skill>"] --intent <intent> --reason <reason> --decision <HANDOFF|SEQUENCE>`
 
 Architectural Reasoning:
 - [Intent] <brief analysis of what the user wants>

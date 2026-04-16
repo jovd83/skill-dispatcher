@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Skill Dispatch Wallboard - Generates a premium HTML/CSS dashboard for skill usage."""
 
+import html
 import json
 import os
 import platform
@@ -8,8 +9,79 @@ from datetime import datetime, timezone
 from pathlib import Path
 from collections import Counter
 
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def extract_logged_skills(event):
+    """Return every skill represented by a log event."""
+    skills_used = event.get("skills_used")
+    if isinstance(skills_used, list):
+        normalized = [skill.strip() for skill in skills_used if isinstance(skill, str) and skill.strip()]
+        if normalized:
+            return normalized
+
+    selected_skill = event.get("selected_skill", "Unknown")
+    if isinstance(selected_skill, str) and selected_skill.strip():
+        normalized = selected_skill.replace("+", ",").replace("&", ",")
+        return [part.strip() for part in normalized.split(",") if part.strip()]
+
+    return ["Unknown"]
+
+
+def display_skill_label(event):
+    """Render a readable label for recent activity."""
+    skills = extract_logged_skills(event)
+    if skills:
+        return " -> ".join(skills)
+    return event.get("selected_skill", "Unknown")
+
+
+def detail_skill_name(event):
+    """Return the primary skill used for detail drill-down from timeline rows."""
+    skills = extract_logged_skills(event)
+    if skills:
+        return skills[0]
+    return event.get("selected_skill", "Unknown")
+
+
+def render_skill_link(skill_name):
+    """Render a clickable skill label that opens the detail page."""
+    safe_label = html.escape(skill_name)
+    safe_js_arg = html.escape(json.dumps(skill_name), quote=True)
+    return f'<span class="clickable skill-link" onclick="showDetail({safe_js_arg})">{safe_label}</span>'
+
+
+def render_secondary_skill_links(event):
+    """Render every non-primary skill in the event as separate detail links."""
+    secondary_skills = extract_logged_skills(event)[1:]
+    if not secondary_skills:
+        return '<span class="muted-cell">none</span>'
+    return " | ".join(render_skill_link(skill) for skill in secondary_skills)
+
+
+def render_recent_activity(event):
+    """Render a single recent activity row."""
+    timestamp = event["timestamp"]
+    date_part, time_part = timestamp.split("T", 1)
+    time_label = time_part.split(".")[0]
+    primary_skill = detail_skill_name(event)
+    reason = html.escape(event.get("reason", ""), quote=True)
+    intent = html.escape(event["intent"])
+    decision = event.get("decision", "HANDOFF")
+    decision_class = decision.lower()
+    decision_label = html.escape(decision)
+
+    return (
+        '<tr>'
+        f'<td class="recent-time-cell"><div>{date_part}</div><small>{time_label}</small></td>'
+        f'<td><span class="badge {decision_class}" title="{decision_label}">{decision[0]}</span></td>'
+        f'<td>{render_skill_link(primary_skill)}</td>'
+        f'<td class="secondary-skills-cell">{render_secondary_skill_links(event)}</td>'
+        f'<td class="recent-intent-cell" title="{reason}">{intent}</td>'
+        '</tr>'
+    )
 
 def main():
     script_dir = Path(__file__).parent.parent
@@ -62,12 +134,9 @@ def main():
     # Explode sequences for accurate skill usage counts
     skills_counter = Counter()
     for ev in events:
-        raw_skill = ev.get("selected_skill", "Unknown")
-        # Split by common sequence delimiters
-        parts = [p.strip() for p in raw_skill.replace("+", ",").replace("&", ",").split(",")]
-        for p in parts:
-            if p:
-                skills_counter[p] += 1
+        for skill in extract_logged_skills(ev):
+            if skill:
+                skills_counter[skill] += 1
                 
     most_used = skills_counter.most_common(1)[0] if skills_counter else ("None", 0)
     unique_skills = len(skills_counter)
@@ -188,15 +257,22 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         for name, count in skills_summary
     ])
 
-    timeline_html = "".join([
-        f'<div class="event-card"> \
-            <div class="time">{ev["timestamp"].split("T")[0]}<br><small style="opacity:0.7">{ev["timestamp"].split("T")[1].split(".")[0]}</small></div> \
-            <div class="badge {ev.get("decision", "HANDOFF").lower()}">{ev.get("decision", "HANDOFF")[0]}</div> \
-            <div class="skill clickable" onclick="showDetail(\'{ev["selected_skill"]}\')">{ev["selected_skill"]}</div> \
-            <div class="intent" title="{ev.get("reason", "")}">{ev["intent"]}</div> \
-          </div>'
-        for ev in recent_events
-    ])
+    timeline_html = (
+        '<div class="table-container recent-activity-shell">'
+        '<table class="recent-activity-table">'
+        '<thead>'
+        '<tr>'
+        '<th>Time</th>'
+        '<th>Type</th>'
+        '<th>Primary Skill</th>'
+        '<th>Secondary Skills</th>'
+        '<th>Intent</th>'
+        '</tr>'
+        '</thead>'
+        '<tbody>'
+        + "".join(render_recent_activity(event) for event in recent_events)
+        + '</tbody></table></div>'
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -375,18 +451,6 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             border-bottom: 1px solid var(--line);
         }}
 
-        .event-card {{
-            background: var(--paper);
-            border: 1px solid var(--line);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 12px;
-            display: grid;
-            grid-template-columns: 100px 40px 180px 1fr;
-            align-items: center;
-            gap: 15px;
-        }}
-
         .badge {{
             display: inline-flex;
             align-items: center;
@@ -403,9 +467,31 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .badge.sequence {{ background: var(--gold); }}
         .badge.no_match {{ background: var(--muted); }}
 
-        .time {{ color: var(--muted); font-size: 0.85rem; line-height: 1.2; }}
-        .skill {{ font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-        .intent {{ font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+        .recent-activity-shell {{
+            background: rgba(255,255,255,0.42);
+            border-radius: 14px;
+        }}
+
+        .recent-activity-table th:nth-child(1) {{ width: 120px; }}
+        .recent-activity-table th:nth-child(2) {{ width: 64px; text-align: center; }}
+        .recent-activity-table th:nth-child(3) {{ width: 170px; }}
+        .recent-activity-table th:nth-child(4) {{ width: 180px; }}
+        .recent-activity-table th:nth-child(5) {{ width: 360px; }}
+
+        .recent-activity-table td:nth-child(2) {{ text-align: center; }}
+
+        .recent-time-cell {{ color: var(--muted); font-size: 0.85rem; line-height: 1.2; }}
+        .recent-time-cell small {{ opacity: 0.8; }}
+        .skill-link {{ font-weight: 700; color: var(--accent); }}
+        .secondary-skills-cell {{ font-size: 0.9rem; }}
+        .recent-intent-cell {{
+            font-size: 0.9rem;
+            max-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        .muted-cell {{ color: var(--muted); font-style: italic; }}
 
         /* Radiator Mode Styles */
         .wall-shell {{
@@ -594,6 +680,32 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         tr:last-child td {{ border-bottom: none; }}
         tr:hover td {{ background: rgba(0,0,0,0.01); }}
+
+        @media (max-width: 980px) {{
+            .main-content {{
+                grid-template-columns: 1fr;
+            }}
+
+            .recent-activity-shell {{
+                overflow-x: auto;
+            }}
+
+            .recent-activity-table {{
+                min-width: 900px;
+            }}
+        }}
+
+        @media (max-width: 720px) {{
+            header {{
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
+            }}
+
+            .view-controls {{
+                flex-wrap: wrap;
+            }}
+        }}
     </style>
 </head>
 <body id="body">
@@ -757,8 +869,14 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         function renderDetail(skillName) {{
             // Filter events where the skillName is either the direct match or part of a sequence string
             const events = ALL_EVENTS.filter(e => {{
-                const s = e.selected_skill || "";
-                const parts = s.replace(/[+]/g, ",").replace(/&/g, ",").split(",").map(p => p.strip ? p.strip() : p.trim());
+                const explicitSkills = Array.isArray(e.skills_used) ? e.skills_used : null;
+                const parts = explicitSkills && explicitSkills.length
+                    ? explicitSkills
+                    : (e.selected_skill || "")
+                        .replace(/[+]/g, ",")
+                        .replace(/&/g, ",")
+                        .split(",")
+                        .map(p => p.strip ? p.strip() : p.trim());
                 return parts.includes(skillName);
             }}).reverse();
             document.getElementById('detail-title').innerText = skillName;

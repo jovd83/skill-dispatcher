@@ -7,8 +7,6 @@ from pathlib import Path
 
 MODULE_PATH = (
     Path(__file__).resolve().parent.parent
-    / "skills"
-    / "skill-dispatcher"
     / "scripts"
     / "build_registry.py"
 )
