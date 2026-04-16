@@ -140,6 +140,8 @@ For `SEQUENCE` decisions, include the full ordered chain so secondary skills are
 .\log-dispatch.cmd --skill <primary-skill> --skills "<primary-skill>, <secondary-skill>" --intent <intent> --reason <reason> --decision SEQUENCE
 ```
 
+`SEQUENCE` logging now fails fast if `--skills` is omitted.
+
 ### Feature Flag
 You can toggle usage logging in `config/settings.json`:
 ```json

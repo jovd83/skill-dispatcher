@@ -21,6 +21,15 @@ def parse_skill_list(raw_value):
     normalized = raw_value.replace("+", ",").replace("&", ",")
     return [part.strip() for part in normalized.split(",") if part.strip()]
 
+
+def validate_logging_args(args, parser):
+    """Enforce required argument combinations for telemetry integrity."""
+    parsed_skills = parse_skill_list(args.skills)
+    if args.decision == "SEQUENCE" and not parsed_skills:
+        parser.error("--skills is required when --decision SEQUENCE is used.")
+    return parsed_skills
+
+
 def check_environment():
     """Check if we are running in a potentially problematic environment (like MS Store stub)."""
     exe = sys.executable.lower()
@@ -41,6 +50,7 @@ def main():
     parser.add_argument("--reason", required=True, help="The reason for this selection.")
     parser.add_argument("--decision", default="HANDOFF", choices=["HANDOFF", "SEQUENCE", "NO_MATCH"], help="The type of matching decision made.")
     args = parser.parse_args()
+    parsed_skills = validate_logging_args(args, parser)
 
     # Determine paths
     script_dir = Path(__file__).parent.parent
@@ -81,7 +91,7 @@ def main():
             pass # Default to enabled if error reading config
 
     # Prepare log entry
-    skills_used = parse_skill_list(args.skills) or [args.skill]
+    skills_used = parsed_skills or [args.skill]
     if args.skill not in skills_used:
         skills_used.insert(0, args.skill)
 

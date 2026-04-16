@@ -61,6 +61,7 @@ When encoding dispatcher-specific metadata inside a `SKILL.md`, keep it under th
     - Check `config/settings.json`. If `logging_enabled` is `true`, **YOU MUST** run this command before providing your final answer:
       `./log-dispatch.cmd --skill <selected_skill> --intent <intent> --reason <reason>` (or `./log-dispatch.sh` on Linux)
     - For `SEQUENCE`, include the full ordered chain with `--skills "<primary-skill>, <secondary-skill>"` so every used skill remains fresh in telemetry and staleness audits.
+    - `SEQUENCE` telemetry is invalid without `--skills`; the logger will reject it.
     - **MANDATORY TOOL SEQUENCING**: This command MUST be either the single tool call in the turn, or the **VERY FIRST tool call** in a sequence of tool calls. Never perform specialized work (writing files, running tests) in a turn where a dispatch log is promised but not yet executed.
     - This ensures the [wallboard.html](reports/wallboard.html) is refreshed and usage analytics are accurate.
 2.  **Registry Refresh**:
