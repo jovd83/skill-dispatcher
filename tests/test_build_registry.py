@@ -36,6 +36,7 @@ metadata:
   dispatcher-accepted-intents: design_confirmation_tests
   dispatcher-input-artifacts: bug_report
   dispatcher-output-artifacts: normalized_test_case
+  dispatcher-downstream-skills: implementation-skill, playwright-skill
   dispatcher-writes-files: true
   dispatcher-manual-only: false
 ---
@@ -48,6 +49,10 @@ metadata:
         self.assertEqual(metadata["metadata"]["dispatcher-accepted-intents"], "design_confirmation_tests")
         self.assertEqual(metadata["metadata"]["dispatcher-input-artifacts"], "bug_report")
         self.assertEqual(metadata["metadata"]["dispatcher-output-artifacts"], "normalized_test_case")
+        self.assertEqual(
+            metadata["metadata"]["dispatcher-downstream-skills"],
+            "implementation-skill, playwright-skill",
+        )
         self.assertTrue(metadata["metadata"]["dispatcher-writes-files"])
         self.assertFalse(metadata["metadata"]["dispatcher-manual-only"])
 
@@ -68,6 +73,7 @@ metadata:
   dispatcher-input-artifacts: bug_report
   dispatcher-output-artifacts: normalized_test_case
   dispatcher-stack-tags: playwright, cypress
+  dispatcher-downstream-skills: stack-aware-unit-testing-skill, playwright-skill
   dispatcher-writes-files: false
   dispatcher-manual-only: false
 ---
@@ -84,8 +90,46 @@ metadata:
             self.assertEqual(metadata["input_artifacts"], ["bug_report"])
             self.assertEqual(metadata["output_artifacts"], ["normalized_test_case"])
             self.assertEqual(metadata["stack_tags"], ["playwright", "cypress"])
+            self.assertEqual(
+                metadata["downstream_skills"],
+                ["stack-aware-unit-testing-skill", "playwright-skill"],
+            )
             self.assertFalse(metadata["writes_files"])
             self.assertFalse(metadata["manual_only"])
+
+    def test_relationship_manifest_can_supply_downstream_skills_without_touching_skill_file(self):
+        frontmatter = {
+            "name": "bug-fix-lifecycle",
+            "description": "Fix defects with confirmation tests.",
+            "metadata": {
+                "dispatcher-category": "testing",
+                "dispatcher-capabilities": "defect-lifecycle",
+            },
+        }
+
+        metadata = self.module.normalize_metadata(
+            frontmatter,
+            folder_name="defect-lifecycle-agent-skill",
+            enrichment_manifest={},
+            relationship_manifest={
+                "bug-fix-lifecycle": {
+                    "downstream_skills": [
+                        "codebase-context",
+                        "test-design-orchestrator",
+                        "stack-aware-unit-testing-skill",
+                    ]
+                }
+            },
+        )
+
+        self.assertEqual(
+            metadata["downstream_skills"],
+            [
+                "codebase-context",
+                "test-design-orchestrator",
+                "stack-aware-unit-testing-skill",
+            ],
+        )
 
     def test_json_registry_contains_capability_and_intent_indexes(self):
         generated_at = self.module.datetime.datetime(2026, 4, 8, 12, 0, 0)
@@ -104,6 +148,7 @@ metadata:
                     "input_artifacts": ["normalized_test_case"],
                     "output_artifacts": ["automated_test"],
                     "stack_tags": ["playwright"],
+                    "downstream_skills": ["codebase-context", "stack-aware-unit-testing-skill"],
                     "writes_files": True,
                     "manual_only": False,
                 },
@@ -135,6 +180,10 @@ metadata:
                 "preferred_stack",
                 "allowed_write_risk",
             ],
+        )
+        self.assertEqual(
+            payload["skills"][0]["downstream_skills"],
+            ["codebase-context", "stack-aware-unit-testing-skill"],
         )
 
 

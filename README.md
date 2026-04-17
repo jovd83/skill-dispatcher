@@ -108,6 +108,9 @@ Add `dispatcher-` tags directly to your `SKILL.md` frontmatter. This is the **pr
 - **`dispatcher-capabilities`**: What specialized actions can this skill perform? (e.g., `ui-testing`, `api-design`).
 - **`dispatcher-accepted-intents`**: Which specific routing intents does it handle? (e.g., `verify_logic`, `design_ui`).
 - **`dispatcher-input-artifacts`**: What data/files does it consume? (e.g., `user-story`).
+- **`dispatcher-downstream-skills`**: Optional declared sub-skills this specialist may orchestrate internally. This is dependency visibility, not proof that each one ran in a given session.
+
+For architecture-agnostic skills, prefer the dispatcher-owned overlay file `config/skill_relationships.json` instead of editing the skill itself. That keeps skill packages portable while still letting this repo describe local orchestration knowledge.
 
 ### 2. Semantic AI Enrichment (Manifest-Driven)
 If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous Intelligence Engine** (v3.0+) to infer them.
@@ -141,6 +144,8 @@ For `SEQUENCE` decisions, include the full ordered chain so secondary skills are
 ```
 
 `SEQUENCE` logging now fails fast if `--skills` is omitted.
+
+Important: the wallboard shows explicit dispatcher decisions from `logs/dispatch_events.jsonl`. If a specialist skill internally uses other skills after a single `HANDOFF`, those downstream skills are not auto-inferred from telemetry. To make that composition visible in the registry and skill detail views, declare them either in skill metadata or, preferably for repo-specific topology, in `config/skill_relationships.json`.
 
 ### Feature Flag
 You can toggle usage logging in `config/settings.json`:

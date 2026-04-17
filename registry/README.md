@@ -37,11 +37,16 @@ Dispatcher-specific routing fields should live inside `metadata` using these nam
 - `dispatcher-input-artifacts`
 - `dispatcher-output-artifacts`
 - `dispatcher-stack-tags`
+- `dispatcher-downstream-skills`
 - `dispatcher-risk`
 - `dispatcher-writes-files`
 - `dispatcher-manual-only`
 
 Values should be stored as strings to remain spec-friendly. Comma-separated lists are supported for list-like fields.
+
+`dispatcher-downstream-skills` is optional and is meant to document likely internal delegation performed by a specialist skill after a dispatcher `HANDOFF`. It improves visibility in the registry and UI, but it does not replace runtime telemetry.
+
+If the skill itself should stay architecture-agnostic, store downstream relationships in `config/skill_relationships.json` instead. The registry builder merges that dispatcher-owned overlay into the generated registry without requiring changes to the upstream skill package.
 
 For migration safety, the registry builder still tolerates top-level routing keys when they exist, but the preferred contract is metadata-based.
 

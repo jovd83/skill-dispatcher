@@ -85,11 +85,12 @@ def render_recent_activity(event):
 
 def main():
     script_dir = Path(__file__).parent.parent
-    log_path = script_dir / "logs" / "dispatch_events.jsonl"
     # SAFE ZONE Discovery & Smart Migration
     persistent_base = Path.home() / ".agents" / "dispatcher-data"
     persistent_log_path = persistent_base / "logs" / "dispatch_events.jsonl"
     local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
+    persistent_registry_path = persistent_base / "registry" / "SKILL_REGISTRY.json"
+    local_registry_path = script_dir / "registry" / "SKILL_REGISTRY.json"
     
     # Context-Aware Paths
     if ".agents" in str(script_dir.resolve()).lower():
@@ -104,9 +105,11 @@ def main():
             except Exception: pass
         
         actual_log_path = persistent_log_path if persistent_log_path.exists() else local_log_path
+        actual_registry_path = persistent_registry_path if persistent_registry_path.exists() else local_registry_path
     else:
         report_dir = script_dir / "reports"
         actual_log_path = local_log_path if local_log_path.exists() else persistent_log_path
+        actual_registry_path = local_registry_path if local_registry_path.exists() else persistent_registry_path
 
     report_path = report_dir / "wallboard.html"
     staleness_report_path = report_dir / "staleness_report.md"
@@ -127,6 +130,19 @@ def main():
     if not events:
         print("[!] Log is empty.")
         return
+
+    registry_index = {}
+    if actual_registry_path.exists():
+        try:
+            with open(actual_registry_path, "r", encoding="utf-8") as f:
+                registry_payload = json.load(f)
+            registry_index = {
+                skill.get("name"): skill
+                for skill in registry_payload.get("skills", [])
+                if isinstance(skill, dict) and skill.get("name")
+            }
+        except Exception:
+            registry_index = {}
 
     # Analytics
     total_calls = len(events)
@@ -181,6 +197,7 @@ def main():
         generated_at=utc_now(),
         treemap_json=json.dumps(treemap_data),
         all_events_json=json.dumps(events),
+        registry_json=json.dumps(registry_index),
         environment_info=environment_info,
         staleness_html=staleness_html
     )
@@ -251,7 +268,7 @@ def markdown_to_html(md: str) -> str:
         
     return "\n".join(html)
 
-def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, recent_events, skills_summary, generated_at, treemap_json, all_events_json, environment_info, staleness_html):
+def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, recent_events, skills_summary, generated_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html):
     leaderboard_html = "".join([
         f'<div class="rank-row"><span class="clickable" onclick="showDetail(\'{name}\')">{name}</span><strong>{count}</strong></div>'
         for name, count in skills_summary
@@ -739,6 +756,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 <li><strong>Audit Integrity:</strong> Keeps the logs clean and focused on high-level architectural decisions (1 log entry) rather than mechanical noise.</li>
             </ul>
             </p>
+            <p><strong>Visibility note:</strong> recent activity shows explicit dispatcher telemetry only. If a handed-off specialist delegates further work internally, those child skills appear only when they are separately logged or declared in registry metadata via <code>dispatcher-downstream-skills</code>.</p>
         </section>
 
         <section class="grid">
@@ -828,6 +846,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
     <script>
         const TREEMAP_DATA = {treemap_json};
         const ALL_EVENTS = {all_events_json};
+        const SKILL_REGISTRY = {registry_json};
 
         function setView(view, skill = null) {{
             const url = new URL(window.location);
@@ -880,6 +899,13 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 return parts.includes(skillName);
             }}).reverse();
             document.getElementById('detail-title').innerText = skillName;
+            const skillMeta = SKILL_REGISTRY[skillName] || {{}};
+            const downstreamSkills = Array.isArray(skillMeta.downstream_skills)
+                ? skillMeta.downstream_skills
+                : [];
+            const downstreamLabel = downstreamSkills.length
+                ? downstreamSkills.join(", ")
+                : "No declared downstream skills";
             
             // Render Stats
             const lastSeen = events.length > 0 ? events[0].timestamp.split('T')[0] : 'Never';
@@ -901,6 +927,10 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 <div class="card" style="grid-column: span 2">
                     <span class="stat-label">Primary Mission</span>
                     <div class="stat-value" style="font-size: 1.2rem; margin-top: 12px; color: var(--muted)">${{mostCommonIntent}}</div>
+                </div>
+                <div class="card" style="grid-column: span 4">
+                    <span class="stat-label">Declared Downstream Skills</span>
+                    <div class="stat-value" style="font-size: 1.1rem; margin-top: 12px; color: var(--muted); line-height: 1.4">${{downstreamLabel}}</div>
                 </div>
             `;
 

@@ -1,0 +1,13 @@
+{
+  "bug-fix-lifecycle": {
+    "downstream_skills": [
+      "codebase-context",
+      "test-design-orchestrator",
+      "stack-aware-unit-testing-skill",
+      "playwright-skill",
+      "restassured-skill",
+      "junit5-skill",
+      "test-artifact-export-skill"
+    ]
+  }
+}

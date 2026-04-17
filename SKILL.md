@@ -57,6 +57,8 @@ When the task genuinely needs two phases, return a `SEQUENCE` with a primary and
 
 When encoding dispatcher-specific metadata inside a `SKILL.md`, keep it under the standard `metadata:` block with namespaced keys such as `dispatcher-capabilities` or `dispatcher-accepted-intents`.
 
+If a specialist skill commonly orchestrates other skills after it receives a single `HANDOFF`, that composition may be declared with `dispatcher-downstream-skills` or supplied externally by the dispatcher in `config/skill_relationships.json`. Prefer the config overlay when the skill must remain architecture-agnostic. Treat both as declarative architecture metadata, not runtime proof that every listed downstream skill executed in the current session.
+
 ## Workflow
 
 1.  **Usage Logging (MANDATORY)**:

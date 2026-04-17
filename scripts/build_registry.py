@@ -12,6 +12,7 @@ LIST_FIELDS = {
     "input_artifacts",
     "output_artifacts",
     "stack_tags",
+    "downstream_skills",
 }
 
 BOOL_FIELDS = {"writes_files", "manual_only"}
@@ -28,7 +29,39 @@ DISPATCHER_METADATA_KEYS = {
     "manual_only": "dispatcher-manual-only",
     "layer": "dispatcher-layer",
     "lifecycle": "dispatcher-lifecycle",
+    "downstream_skills": "dispatcher-downstream-skills",
 }
+
+ENRICHMENT_FIELDS = [
+    "capabilities",
+    "accepted_intents",
+    "stack_tags",
+    "tags",
+    "input_artifacts",
+    "output_artifacts",
+]
+
+
+def load_json_file(path):
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def merge_unique_lists(*values):
+    merged = []
+    seen = set()
+    for value in values:
+        for item in normalize_list(value):
+            if item not in seen:
+                seen.add(item)
+                merged.append(item)
+    return merged
 
 
 def parse_scalar(value):
@@ -257,18 +290,8 @@ def normalize_lifecycle(value):
     return "active"
 
 
-def normalize_metadata(frontmatter, folder_name="unknown"):
+def normalize_metadata(frontmatter, folder_name="unknown", enrichment_manifest=None, relationship_manifest=None):
     metadata = dict(frontmatter)
-    
-    # Load Semantic AI Manifest for intelligent enrichment
-    manifest_path = Path(__file__).parent.parent / "config" / "skill_enrichments.json"
-    manifest = {}
-    if manifest_path.exists():
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
-        except Exception:
-            pass
 
     metadata_block = metadata.get("metadata", {})
     if not isinstance(metadata_block, dict):
@@ -289,13 +312,14 @@ def normalize_metadata(frontmatter, folder_name="unknown"):
     ])
     
     # Prioritize Folder Name lookup in AI Manifest
-    enrichment = manifest.get(folder_name) or manifest.get(name)
+    enrichment_manifest = enrichment_manifest or {}
+    relationship_manifest = relationship_manifest or {}
+
+    enrichment = enrichment_manifest.get(folder_name) or enrichment_manifest.get(name)
     
     if is_empty and enrichment:
-        fields_to_enrich = ["capabilities", "accepted_intents", "stack_tags", "tags", "input_artifacts", "output_artifacts"]
-        
         metadata["enrichment_count"] = 0
-        for field in fields_to_enrich:
+        for field in ENRICHMENT_FIELDS:
             if not metadata.get(field) and enrichment.get(field):
                 metadata[field] = enrichment.get(field)
                 metadata["enrichment_count"] += len(enrichment.get(field))
@@ -314,6 +338,12 @@ def normalize_metadata(frontmatter, folder_name="unknown"):
 
     for field in BOOL_FIELDS:
         metadata[field] = normalize_bool(metadata.get(field))
+
+    relationship_overlay = relationship_manifest.get(folder_name) or relationship_manifest.get(name) or {}
+    metadata["downstream_skills"] = merge_unique_lists(
+        relationship_overlay.get("downstream_skills"),
+        metadata.get("downstream_skills"),
+    )
 
     # New: Layer & Lifecycle Inference
     metadata["layer"] = normalize_layer(metadata, name, folder_name)
@@ -379,6 +409,9 @@ def build_indexes(skills):
 def find_skills(scan_dirs):
     """Discover and normalize skills from the provided directories."""
     skills = {}
+    config_dir = Path(__file__).parent.parent / "config"
+    enrichment_manifest = load_json_file(config_dir / "skill_enrichments.json")
+    relationship_manifest = load_json_file(config_dir / "skill_relationships.json")
     print("[*] Scanning for skills in: " + ", ".join(str(directory) for directory in scan_dirs))
 
     for directory in scan_dirs:
@@ -409,7 +442,12 @@ def find_skills(scan_dirs):
                         print(f" [!] Skipping duplicate skill: {name} (keeping {skills[name]['path']})")
                         continue
 
-                    metadata = normalize_metadata(frontmatter, folder.name)
+                    metadata = normalize_metadata(
+                        frontmatter,
+                        folder.name,
+                        enrichment_manifest=enrichment_manifest,
+                        relationship_manifest=relationship_manifest,
+                    )
 
                     skills[name] = {
                         "name": name,
@@ -481,6 +519,7 @@ def render_markdown_registry(skills, scan_dirs, generated_at, capability_index, 
                 ("input_artifacts", "Input artifacts"),
                 ("output_artifacts", "Output artifacts"),
                 ("stack_tags", "Stack tags"),
+                ("downstream_skills", "Declared downstream skills"),
                 ("tags", "Tags"),
             ):
                 values = metadata.get(field, [])
@@ -518,6 +557,7 @@ def render_json_registry(skills, scan_dirs, generated_at, capability_index, inte
                 "input_artifacts": metadata.get("input_artifacts", []),
                 "output_artifacts": metadata.get("output_artifacts", []),
                 "stack_tags": metadata.get("stack_tags", []),
+                "downstream_skills": metadata.get("downstream_skills", []),
                 "writes_files": metadata.get("writes_files", False),
                 "manual_only": metadata.get("manual_only", False),
                 "telemetry": "required",
