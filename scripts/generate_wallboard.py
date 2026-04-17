@@ -411,16 +411,16 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         }}
 
         .btn-primary {{
-            background: linear-gradient(135deg, #274d53 0%, #365f66 100%);
-            color: #f8f2e9;
-            border-color: rgba(39, 77, 83, 0.4);
-            box-shadow: 0 2px 0 rgba(18, 38, 41, 0.15), 0 14px 24px rgba(39, 77, 83, 0.22);
+            background: linear-gradient(135deg, #aa4b22 0%, #c45b2f 100%);
+            color: #fffaf1;
+            border-color: rgba(170, 75, 34, 0.3);
+            box-shadow: 0 2px 0 rgba(120, 50, 20, 0.15), 0 14px 24px rgba(170, 75, 34, 0.18);
         }}
 
         .btn-primary:hover {{
-            color: #fffdf9;
-            background: linear-gradient(135deg, #1f4349 0%, #2f565d 100%);
-            box-shadow: 0 4px 0 rgba(18, 38, 41, 0.14), 0 18px 28px rgba(39, 77, 83, 0.28);
+            color: #ffffff;
+            background: linear-gradient(135deg, #96401d 0%, #aa4b22 100%);
+            box-shadow: 0 4px 0 rgba(120, 50, 20, 0.14), 0 18px 28px rgba(170, 75, 34, 0.24);
         }}
 
         .btn-secondary {{
