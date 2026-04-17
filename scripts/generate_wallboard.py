@@ -795,8 +795,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             </div>
             <div class="view-controls">
                 <div class="nav-actions">
-                    <a href="?view=wallboard" class="btn btn-primary">Show Wallboard</a>
-                    <a href="?view=staleness" class="btn btn-secondary">Show staleness report</a>
+                    <a href="?view=wallboard" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Show Wallboard</a>
+                    <a href="?view=staleness" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Show staleness report</a>
                 </div>
                 <div style="text-align: right; margin-left: 20px;">
                     <span class="stat-label">System Integrity</span>
