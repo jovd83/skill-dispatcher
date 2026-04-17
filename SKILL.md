@@ -3,7 +3,7 @@ name: skill-dispatcher
 description: High-performance routing engine for AI AgentSkills. Classifies user intent, scans for specialized skills, and generates optimal dispatch decisions (HANDOFF, SEQUENCE, or NO_MATCH). Use this to manage complexity in large skill environments and ensure the best-equipped skill handles every task.
 metadata:
   author: jovd83
-  version: "3.1.0"
+  version: 3.1.0
   dispatcher-category: analysis
   dispatcher-capabilities: skill-routing, capability-discovery, contract-routing
   dispatcher-accepted-intents: route_skill_work, resolve_skill_handoff
