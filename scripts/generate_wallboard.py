@@ -355,27 +355,81 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         .view-controls {{
             display: flex;
-            gap: 12px;
+            align-items: center;
+            gap: 14px;
+        }}
+
+        .nav-actions {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            padding: 8px;
+            border: 1px solid rgba(72, 63, 53, 0.12);
+            border-radius: 999px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 252, 247, 0.94));
+            box-shadow: 0 10px 30px rgba(72, 63, 53, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
         }}
 
         .btn {{
-            background: var(--paper);
-            border: 1px solid var(--line);
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 52px;
+            padding: 0 24px;
             border-radius: 999px;
-            padding: 8px 20px;
-            font-weight: 700;
-            font-size: 0.85rem;
+            border: 1px solid rgba(72, 63, 53, 0.12);
+            background: linear-gradient(180deg, #fffdfa 0%, #f6efe5 100%);
+            box-shadow: 0 2px 0 rgba(72, 63, 53, 0.05), 0 10px 18px rgba(72, 63, 53, 0.08);
+            font-weight: 800;
+            font-size: 0.95rem;
+            letter-spacing: 0.01em;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
             color: var(--ink);
             text-decoration: none;
         }}
 
+        .btn::after {{
+            content: "";
+            position: absolute;
+            inset: 1px;
+            border-radius: inherit;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0));
+            pointer-events: none;
+        }}
+
         .btn:hover {{
-            background: var(--accent);
-            color: white;
-            border-color: transparent;
-            box-shadow: 0 4px 12px rgba(170, 75, 34, 0.2);
+            transform: translateY(-2px);
+            border-color: rgba(170, 75, 34, 0.28);
+            box-shadow: 0 4px 0 rgba(72, 63, 53, 0.04), 0 16px 24px rgba(170, 75, 34, 0.18);
+        }}
+
+        .btn:focus-visible {{
+            outline: 3px solid rgba(170, 75, 34, 0.22);
+            outline-offset: 3px;
+        }}
+
+        .btn-primary {{
+            background: linear-gradient(135deg, #274d53 0%, #365f66 100%);
+            color: #f8f2e9;
+            border-color: rgba(39, 77, 83, 0.4);
+            box-shadow: 0 2px 0 rgba(18, 38, 41, 0.15), 0 14px 24px rgba(39, 77, 83, 0.22);
+        }}
+
+        .btn-primary:hover {{
+            color: #fffdf9;
+            background: linear-gradient(135deg, #1f4349 0%, #2f565d 100%);
+            box-shadow: 0 4px 0 rgba(18, 38, 41, 0.14), 0 18px 28px rgba(39, 77, 83, 0.28);
+        }}
+
+        .btn-secondary {{
+            background: linear-gradient(180deg, #fffdfa 0%, #f5ede2 100%);
+        }}
+
+        .btn-secondary:hover {{
+            color: var(--ink);
+            background: linear-gradient(180deg, #fff7ef 0%, #f2e6d6 100%);
         }}
 
         /* Info Styles */
@@ -722,6 +776,12 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             .view-controls {{
                 flex-wrap: wrap;
             }}
+
+            .nav-actions {{
+                width: 100%;
+                justify-content: flex-start;
+                border-radius: 24px;
+            }}
         }}
     </style>
 </head>
@@ -734,8 +794,10 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 <div class="timestamp">Generated on {generated_at}</div>
             </div>
             <div class="view-controls">
-                <a href="?view=wallboard" class="btn">Show Wallboard</a>
-                <a href="?view=staleness" class="btn">Show staleness report</a>
+                <div class="nav-actions">
+                    <a href="?view=wallboard" class="btn btn-primary">Show Wallboard</a>
+                    <a href="?view=staleness" class="btn btn-secondary">Show staleness report</a>
+                </div>
                 <div style="text-align: right; margin-left: 20px;">
                     <span class="stat-label">System Integrity</span>
                     <span style="color: var(--olive); font-weight: 700;">● ACTIVE</span>

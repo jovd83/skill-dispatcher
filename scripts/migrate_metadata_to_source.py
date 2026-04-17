@@ -1,18 +1,42 @@
+#!/usr/bin/env python3
+"""Migrate Metadata - Enforces STRICT Dispatcher Schema.
+Ensures all standard tags are present in every SKILL.md.
+"""
+
 import json
 import os
 import re
 import argparse
 from pathlib import Path
 
+# The standard set of tags we want in EVERY skill
+STANDARD_SCHEMA = [
+    "dispatcher-category",
+    "dispatcher-layer",
+    "dispatcher-lifecycle",
+    "dispatcher-risk",
+    "dispatcher-writes-files",
+    "dispatcher-capabilities",
+    "dispatcher-accepted-intents",
+    "dispatcher-input-artifacts",
+    "dispatcher-output-artifacts",
+    "dispatcher-stack-tags",
+    "dispatcher-persistent-directories"
+]
+
 def migrate_metadata(skills_root, enrichments_path, dry_run=True):
-    skills_root = Path(skills_root)
+    skills_root = Path(skills_root).resolve()
     enrichments_all = {}
     
     if os.path.exists(enrichments_path):
         with open(enrichments_path, "r", encoding="utf-8") as f:
             enrichments_all = json.load(f)
     
-    print(f"[*] Starting migration scan in {skills_root}...")
+    print(f"[*] Starting strict schema enforcement in {skills_root}...")
+    
+    skill_files = list(skills_root.rglob("SKILL.md"))
+    print(f"[*] Found {len(skill_files)} SKILL.md files.")
+
     if dry_run:
         print("[!] DRY RUN MODE: No files will be modified.")
 
@@ -20,98 +44,112 @@ def migrate_metadata(skills_root, enrichments_path, dry_run=True):
     skipped_count = 0
     error_count = 0
 
-    # Iterate over directories in skills_root
-    for skill_dir in skills_root.iterdir():
-        if not skill_dir.is_dir():
-            continue
-            
-        skill_file = skill_dir / "SKILL.md"
-        if not skill_file.exists():
-            continue
-
+    for skill_file in skill_files:
+        skill_dir = skill_file.parent
+        skill_name = skill_dir.name.lower()
+        enrichment = enrichments_all.get(skill_name, {})
+        
         try:
             content = skill_file.read_text(encoding="utf-8")
-            
-            # Extract frontmatter
-            match = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
+            match = re.search(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
             if not match:
                 continue
                 
             frontmatter = match.group(1)
             
-            # Check if it's a dispatcher-ready skill
-            if "dispatcher-" not in frontmatter:
-                continue
-
-            # Check if layer already exists
-            if "dispatcher-layer:" in frontmatter:
-                print(f"[-] {skill_dir.name}: Existing layer found. Skipping.")
+            # Check for strict compliance (do all standard keys exist?)
+            is_compliant = all(f"{key}:" in frontmatter for key in STANDARD_SCHEMA)
+            if is_compliant:
                 skipped_count += 1
                 continue
 
-            # Determine Target Layer
-            # We use the folder name as the skill key lookup
-            skill_name = skill_dir.name.lower()
-            enrichment = enrichments_all.get(skill_name, {})
-            target_layer = enrichment.get("layer", "execution") # Default to execution
+            # Build injection block
+            lines = []
             
-            # Prepare injection lines
-            injection = f"    dispatcher-layer: {target_layer}\n    dispatcher-lifecycle: active\n"
+            # 1. Identity
+            layer = enrichment.get("layer", "execution")
+            category = enrichment.get("category", layer)
+            lines.append(f"  dispatcher-category: {category}")
+            lines.append(f"  dispatcher-layer: {layer}")
+            lines.append(f"  dispatcher-lifecycle: active")
             
-            # Locate the metadata: block
-            # This regex looks for 'metadata:' and injects the new lines after it
-            new_frontmatter = re.sub(
-                r"(metadata:\s*\n)", 
-                rf"\1{injection}", 
-                frontmatter, 
-                count=1
-            )
+            # 2. Safety
+            risk = enrichment.get("risk", "low")
+            writes_files = str(enrichment.get("writes_files", "false")).lower()
+            lines.append(f"  dispatcher-risk: {risk}")
+            lines.append(f"  dispatcher-writes-files: {writes_files}")
+
+            # 3. Capabilities and Contracts (Enforce all even if empty)
+            mappings = {
+                "capabilities": "dispatcher-capabilities",
+                "accepted_intents": "dispatcher-accepted-intents",
+                "input_artifacts": "dispatcher-input-artifacts",
+                "output_artifacts": "dispatcher-output-artifacts",
+                "stack_tags": "dispatcher-stack-tags",
+                "persistent_directories": "dispatcher-persistent-directories"
+            }
             
-            # If for some reason metadata: block isn't found but dispatcher- tags are present
-            # we might need to append them to the end of the frontmatter? 
-            # But based on our standard, metadata: should be there.
-            if new_frontmatter == frontmatter:
-                # Fallback: check if metadata is just missing as a header but tags are present
-                # This is unlikely in our standard but let's be safe.
-                if "metadata:" not in frontmatter:
-                    # Append to end of frontmatter
-                    new_frontmatter = frontmatter.rstrip() + f"\nmetadata:\n{injection}"
+            for json_key, yaml_key in mappings.items():
+                val = enrichment.get(json_key, [])
+                if isinstance(val, list):
+                    csv_val = ", ".join(val)
+                    lines.append(f"  {yaml_key}: {csv_val}")
+                else:
+                    lines.append(f"  {yaml_key}: {val}")
+            
+            # 4. Tags
+            tags = enrichment.get("tags", [])
+            if tags:
+                lines.append("  metadata-tags:")
+                for tag in tags:
+                    lines.append(f"    - {tag}")
+            
+            injection = "\n".join(lines) + "\n"
+            
+            # REPLACE partial metadata to avoid duplicates then inject fresh block
+            new_frontmatter = frontmatter
+            if "metadata:" in frontmatter:
+                # Remove ANY existing dispatcher- tags inside the metadata block
+                new_frontmatter = re.sub(r"  dispatcher-.*?\n(?! )", "", frontmatter, flags=re.DOTALL)
+                new_frontmatter = re.sub(r"  metadata-tags:.*?\n(?! )", "", new_frontmatter, flags=re.DOTALL)
+                # Inject the fresh standard block
+                new_frontmatter = re.sub(r"(metadata:\s*\n)", rf"\1{injection}", new_frontmatter, count=1)
+            else:
+                new_frontmatter = frontmatter.rstrip() + f"\nmetadata:\n{injection}"
             
             if new_frontmatter != frontmatter:
                 new_content = content.replace(frontmatter, new_frontmatter)
                 
                 if not dry_run:
                     skill_file.write_text(new_content, encoding="utf-8")
-                    print(f"[+] {skill_dir.name}: Metadata injected ({target_layer})")
+                    print(f"[+] {skill_name}: Strict schema enforced")
                 else:
-                    print(f"[*] {skill_dir.name}: Would inject ({target_layer})")
+                    print(f"[*] {skill_name}: Would enforce strict schema")
                 
                 modified_count += 1
             else:
-                print(f"[?] {skill_dir.name}: Could not locate insertion point.")
                 error_count += 1
 
         except Exception as e:
-            print(f"[!] {skill_dir.name}: Error processing file: {e}")
+            print(f"[!] {skill_name}: Error: {e}")
             error_count += 1
 
     print("\n" + "="*40)
-    print(f"Migration Summary ({'Dry Run' if dry_run else 'Live'})")
+    print(f"Strict Schema Migration Summary ({'Dry Run' if dry_run else 'Live'})")
     print(f"  Modified: {modified_count}")
     print(f"  Skipped:  {skipped_count}")
     print(f"  Errors:   {error_count}")
     print("="*40)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Migrate dispatcher metadata to skill source files.")
-    parser.add_argument("--root", default="C:/projects/skills", help="Root directory of core skills")
-    parser.add_argument("--enrichments", default="../config/skill_enrichments.json", help="Path to enrichments JSON")
-    parser.add_argument("--no-dry-run", action="store_true", help="Execute the migration (omit for dry run)")
-    
+    parser = argparse.ArgumentParser(description="Strict schema enforcement.")
+    parser.add_argument("--root", help="Skills root")
+    parser.add_argument("--no-dry-run", action="store_true")
     args = parser.parse_args()
     
-    # Resolve enrichment path relative to script
-    script_dir = Path(__file__).parent
-    enrichments_abs = (script_dir / args.enrichments).resolve()
+    script_path = Path(__file__).resolve()
+    script_dir = script_path.parent.parent
+    skills_root = Path(args.root) if args.root else script_dir.parent
+    enrichments = (script_dir / "config" / "skill_enrichments.json").resolve()
     
-    migrate_metadata(args.root, str(enrichments_abs), dry_run=not args.no_dry_run)
+    migrate_metadata(skills_root, str(enrichments), dry_run=not args.no_dry_run)
