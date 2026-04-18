@@ -17,11 +17,6 @@ metadata:
   dispatcher-lifecycle: active
 ---
 
-## Telemetry & Logging
-> [!IMPORTANT]
-> All usage of this skill must be logged via the Skill Dispatcher to ensure audit logs and wallboard analytics are accurate:
-> `./log-dispatch.cmd --skill <skill_name> --intent <intent> --reason <reason>` (or `./log-dispatch.sh` on Linux)
-
 # Skill Dispatcher
 
 > [!IMPORTANT]
@@ -88,7 +83,7 @@ If a specialist skill commonly orchestrates other skills after it receives a sin
     - **Artifact Compatibility**: Ensure `current_artifact_type` can feed the skill and the skill can produce `target_artifact_type`.
     - **State Alignment**: Ensure the skill's `writes_files` and `risk` flags align with the user's current environment state.
     - **Repo-Native Stack Preference**: Prefer a repository-native stack over an organization default when the repository already shows clear evidence.
-    - **Logical Flow**: If a task requires analysis *before* implementation, prepare a `SEQUENCE`.
+    - **Logical Flow**: If a task requires analysis _before_ implementation, prepare a `SEQUENCE`.
     - **Context-First (Phase 0)**: For high-risk execution tasks or `SEQUENCE` decisions, prepend a context-loading step per §12 of `DISPATCH_POLICY.md`. Prefer `personal-context-portfolio` or `codebase-context` as Phase 0.
     - **Layer-Aware Selection**: When resolving conflicts between skills that share the same intent, use the `layer` field (§13) to prefer feedback skills for review intents and execution skills for generative intents.
     - **Lifecycle Check**: Skip `archived` skills entirely. Warn on `sunset` skills per §14.
@@ -98,12 +93,12 @@ If a specialist skill commonly orchestrates other skills after it receives a sin
 
 ## Decision Matrix
 
-| User Intent | Context Clarity | Recommended Decision |
-| :--- | :--- | :--- |
-| Single, clear specialist task | High | `HANDOFF` |
-| Multi-phase (Analyze + Build) | High | `SEQUENCE` |
-| Ambiguous or Multi-skill overlap | Medium | `SEQUENCE` (Phase 1: Analysis) |
-| Out of scope for all skills | Low | `NO_MATCH` |
+| User Intent                      | Context Clarity | Recommended Decision           |
+| :------------------------------- | :-------------- | :----------------------------- |
+| Single, clear specialist task    | High            | `HANDOFF`                      |
+| Multi-phase (Analyze + Build)    | High            | `SEQUENCE`                     |
+| Ambiguous or Multi-skill overlap | Medium          | `SEQUENCE` (Phase 1: Analysis) |
+| Out of scope for all skills      | Low             | `NO_MATCH`                     |
 
 ## Output Format
 
@@ -143,11 +138,11 @@ To Ensure precise routing and lifecycle management, all skills in the harness sh
 
 Defines the skill's primary behavioral mode.
 
-| Value | Role | Description |
-| :--- | :--- | :--- |
-| `information` | **Eyes** | Read-only, context-loading, or research skills. Example: `codebase-context`, `get-api-docs`. |
-| `execution` | **Hands** | Generative skills that modify the workspace or implement logic. Example: `angular-developer`, `stitch-design`. |
-| `feedback` | **Safety** | Analytical skills that review, audit, verify, or score artifacts. Example: `defensive-appsec-review-skill`, `tss-test-case-reviewer`. |
+| Value         | Role       | Description                                                                                                                           |
+| :------------ | :--------- | :------------------------------------------------------------------------------------------------------------------------------------ |
+| `information` | **Eyes**   | Read-only, context-loading, or research skills. Example: `codebase-context`, `get-api-docs`.                                          |
+| `execution`   | **Hands**  | Generative skills that modify the workspace or implement logic. Example: `angular-developer`, `stitch-design`.                        |
+| `feedback`    | **Safety** | Analytical skills that review, audit, verify, or score artifacts. Example: `defensive-appsec-review-skill`, `tss-test-case-reviewer`. |
 
 ### 6.2 Lifecycle Status (`dispatcher-lifecycle`)
 
@@ -167,4 +162,4 @@ Governs the skill's availability and maintenance status.
 - **PREFER SAFETY**: When in doubt, route to an analytical or read-only skill first.
 - **VERIFY PATHS**: Ensure any files passed in the "Handoff Payload" actually exist in the current workspace.
 - **NO HARDCODED ECOSYSTEM COUPLING**: Prefer capability-based discovery over direct references to sibling skill paths. Direct paths are a fallback only.
-- **ATOMIC DISPATCH**: Always include the `log-dispatch.cmd` command as the **VERY FIRST** tool call in the turn where a dispatch decision is made. Never perform implementation tool calls (like `write_to_file` or `run_command`) in a turn that *promises* a log but doesn't *execute* it.
+- **ATOMIC DISPATCH**: Always include the `log-dispatch.cmd` command as the **VERY FIRST** tool call in the turn where a dispatch decision is made. Never perform implementation tool calls (like `write_to_file` or `run_command`) in a turn that _promises_ a log but doesn't _execute_ it.
