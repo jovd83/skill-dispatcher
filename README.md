@@ -201,9 +201,69 @@ The Skill Dispatcher includes a suite of utility scripts to manage your skill po
 | `generate_wallboard.py` | Generates the HTML analytics dashboard. | To force-refresh the dashboard. | `python scripts/generate_wallboard.py` |
 | `check_shared_policy.py` | Syncs global policies from `shared-memory`. | Before complex routing tasks. | `python scripts/check_shared_policy.py` |
 | `enforce_telemetry.py` | Audits/patches skills for logging compliance. | To ensure all skills have logging hooks. | `python scripts/enforce_telemetry.py [--patch]` |
+| `skill_md_telemetry_notice.py` | Adds/removes the telemetry paragraph and can patch missing dispatcher tags in user-installed skills. | When you want to bulk-update `SKILL.md` files under `~/.agents/skills`. | `python scripts/skill_md_telemetry_notice.py --add-paragraph [--patch-missing-tags] [--write]` |
 | `migrate_metadata_to_source.py` | Injects inferred tags into `SKILL.md` files. | To promote AI-suggested tags to source. | `python scripts/migrate_metadata_to_source.py [--no-dry-run]` |
 | `migrate_past_usage.py` | Recovers events from session history. | When bootstrapping a new environment. | `python scripts/migrate_past_usage.py [--sample]` |
 | `staleness_audit.py` | Identifies underused or obsolete skills. | During maintenance to prune your portfolio. | `python scripts/staleness_audit.py [--days 90]` |
+
+### `skill_md_telemetry_notice.py`
+
+This script scans a skills root, defaults to `~/.agents/skills`, and updates every `SKILL.md` file it finds. It runs as a dry run unless you pass `--write`. During a dry run it prints `[would save]` for each matching file, and during a live run it prints `[saved]` for each file it updates.
+
+The actions are independent, so you can run one or combine them:
+
+- `--add-paragraph`: add the standard telemetry paragraph
+- `--remove-paragraph`: remove the standard telemetry paragraph
+- `--patch-missing-tags`: add missing dispatcher tags in frontmatter
+- `--target <path>`: search a different skills root instead of `~/.agents/skills`
+- `--enrichments <path>`: use a different enrichment manifest for tag patching
+- `--write`: persist changes to disk
+
+Examples:
+
+```bash
+# Preview paragraph insertion in ~/.agents/skills
+python scripts/skill_md_telemetry_notice.py --add-paragraph
+
+# Insert the paragraph and save files
+python scripts/skill_md_telemetry_notice.py --add-paragraph --write
+
+# Remove the paragraph and save files
+python scripts/skill_md_telemetry_notice.py --remove-paragraph --write
+
+# Patch missing dispatcher tags only
+python scripts/skill_md_telemetry_notice.py --patch-missing-tags --write
+
+# Add the paragraph and patch tags in one run
+python scripts/skill_md_telemetry_notice.py --add-paragraph --patch-missing-tags --write
+```
+
+The exact paragraph added by `--add-paragraph` is:
+
+```md
+## Telemetry & Logging
+> [!IMPORTANT]
+> All usage of this skill must be logged via the Skill Dispatcher to ensure audit logs and wallboard analytics are accurate:
+> `./log-dispatch.cmd --skill <skill_name> --intent <intent> --reason <reason>` (or `./log-dispatch.sh` on Linux)
+```
+
+The exact paragraph removed by `--remove-paragraph` is that same `## Telemetry & Logging` block.
+
+When `--patch-missing-tags` is used, the script only fills in missing dispatcher tags. It does not overwrite existing values. By default it reads `config/skill_enrichments.json` to infer values for missing keys, and it can add:
+
+- `dispatcher-category`
+- `dispatcher-layer`
+- `dispatcher-lifecycle`
+- `dispatcher-risk`
+- `dispatcher-writes-files`
+- `dispatcher-capabilities`
+- `dispatcher-accepted-intents`
+- `dispatcher-input-artifacts`
+- `dispatcher-output-artifacts`
+- `dispatcher-stack-tags`
+- `dispatcher-persistent-directories`
+
+If a `SKILL.md` file has no frontmatter, paragraph operations still work, but tag patching is skipped for that file.
 
 ## ⚖️ Core Policies
 
