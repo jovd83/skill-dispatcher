@@ -80,6 +80,8 @@ If a specialist skill commonly orchestrates other skills after it receives a sin
     - Consult `SKILL_REGISTRY.json` as the machine-readable source of truth.
     - Use `SKILL_REGISTRY.md` for quick human inspection and auditing.
     - Review `registry/DISPATCH_POLICY.md` for prioritized routing heuristics. (Policy files remain in the installation folder).
+    - **Canonical Bootstrap Step**: Before complex routing, prefer `python scripts/dispatch_bootstrap.py --topic RoutingPolicies --format json`. This is the one command agents should remember. It loads repo-local project memory first, overlays shared-memory defaults second, and emits a bootstrap note plus logger-ready policy fields.
+    - **Bootstrap Artifact**: Treat `DISPATCH_BOOTSTRAP.json` / `DISPATCH_BOOTSTRAP.md` as the reusable policy context artifact for the current routing pass instead of separately re-checking project memory or shared memory.
     - **Shared Memory Check**: If the `shared-memory` skill is present, check only for stable cross-project routing policy or SOPs. Do not treat shared memory as a task-local router.
 4.  **Heuristic Evaluation**:
     - **Capability First**: Prefer exact `accepted_intents`, then matching `capabilities`, then category and tags.
@@ -91,8 +93,8 @@ If a specialist skill commonly orchestrates other skills after it receives a sin
     - **Layer-Aware Selection**: When resolving conflicts between skills that share the same intent, use the `layer` field (§13) to prefer feedback skills for review intents and execution skills for generative intents.
     - **Lifecycle Check**: Skip `archived` skills entirely. Warn on `sunset` skills per §14.
 5.  **Memory & Promotion**:
-    - Consult local `memory/routing_history.md` for repo-specific trends.
-    - **Promotion**: If a routing decision proves exceptionally stable or identifies a new cross-project policy, recommend promoting the policy to the `shared-memory` skill. Do not promote repo-local routes.
+    - Consult project-local routing memory through `python scripts/project_memory.py` for repo-specific trends and policies.
+    - **Promotion**: If a routing decision proves exceptionally stable or identifies a new cross-project policy, prefer `python <shared-memory>/scripts/manage_memory.py promote ...` instead of ad-hoc remembering. Do not promote repo-local routes.
 
 ## Decision Matrix
 

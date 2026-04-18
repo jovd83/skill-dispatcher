@@ -22,7 +22,20 @@ The **Skill Dispatcher** solves this by acting as a strategic traffic controller
 2.  **Dynamic Discovery**: Scans local (`./skills`), global (`~/.agents/skills`), and environment-defined (`SKILL_DISPATCH_EXTRA_DIRS`) directories.
 3.  **Registry v2.0**: Robustly indexes skill metadata into machine-readable `SKILL_REGISTRY.json` for deterministic selection.
 4.  **Workflow Orchestration**: Automatically decides between `HANDOFF`, `SEQUENCE` (multi-phase flow), or `NO_MATCH`.
-5.  **Shared Memory Integration**: Promotes stable routing policies to a `shared-memory` skill for global consistency.
+5.  **Shared Memory Integration**: Loads project-local routing memory first, then shared-memory defaults with confidence and freshness gates, and supports promoting stable routing policies to `shared-memory` for global consistency.
+
+## New Capabilities In This Sync
+
+This source repository now contains a stronger policy-aware routing layer so agents no longer need to "remember" that memory exists as a separate concern:
+
+- **Canonical Bootstrap Wrapper**: `scripts/dispatch_bootstrap.py` is now the one command an agent should call before complex routing. It gathers policy context, emits a reusable bootstrap note, and exposes logger-ready fields.
+- **Bootstrap Artifacts**: the dispatcher can now produce `DISPATCH_BOOTSTRAP.json` and `DISPATCH_BOOTSTRAP.md`, which give later agents a single canonical routing context artifact instead of forcing them to re-check memory layers independently.
+- **Project Memory Lane**: `scripts/project_memory.py` gives repository-specific routing rules a proper local home so repo conventions do not leak into shared memory.
+- **Structured Shared Policy Lookup**: `scripts/check_shared_policy.py` and `scripts/prepare_dispatch_context.py` now return explicit `hit` / `miss` / `error` outcomes with confidence and freshness gates.
+- **Policy Telemetry**: `dispatch_logger.py` and the wallboard now track whether policy was consulted, where it came from, how many hits were returned, and whether policy changed the routing decision.
+- **Promotion Suggestions**: `scripts/suggest_routing_promotions.py` can mine dispatcher logs for repeated routing patterns and turn them into concrete promotion candidates for shared memory.
+
+The practical effect is that routing policy is now discoverable through one bootstrap path, locally overridable through project memory, globally extensible through shared memory, and visible in telemetry instead of being hidden tribal knowledge.
 
 ## 📋 Registry Contract v2.0
 
@@ -120,8 +133,10 @@ If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous
 
 ## 🧠 Memory & Promotion
 
-- **Local Memory**: Prioritizes skills based on repo-specific historical success.
-- **Policy Promotion**: Identifies stable routing patterns and recommends promoting them to the `shared-memory` skill for use across your entire organization.
+- **Project Memory Lane**: `scripts/project_memory.py` stores repo-local routing policies and conventions under the repository rather than polluting shared memory.
+- **Canonical Bootstrap**: `scripts/dispatch_bootstrap.py` is the one-step entrypoint that loads project memory first, overlays shared-memory defaults second, and emits a reusable bootstrap note plus logger-ready policy fields.
+- **Shared Policy Lookup**: `scripts/prepare_dispatch_context.py` remains the lower-level structured context builder used underneath the bootstrap step.
+- **Policy Promotion**: Stable routing patterns can be promoted through the `shared-memory` CLI using its assessed `promote` workflow instead of ad-hoc manual remembering.
 
 ## 📊 Usage Monitoring
 
@@ -199,71 +214,15 @@ The Skill Dispatcher includes a suite of utility scripts to manage your skill po
 | `build_registry.py` | Scans for `SKILL.md` files and compiles the registry. | After adding or modifying skill metadata. | `python scripts/build_registry.py` |
 | `dispatch_logger.py` | Records skill invocation events for auditing. | Automatically via `log-dispatch.cmd`. | `python scripts/dispatch_logger.py --skill <name> [--skills "skill-a, skill-b"] ...` |
 | `generate_wallboard.py` | Generates the HTML analytics dashboard. | To force-refresh the dashboard. | `python scripts/generate_wallboard.py` |
-| `check_shared_policy.py` | Syncs global policies from `shared-memory`. | Before complex routing tasks. | `python scripts/check_shared_policy.py` |
+| `check_shared_policy.py` | Reads shared-memory routing policies with freshness and confidence gates. | When you need shared defaults only. | `python scripts/check_shared_policy.py` |
+| `dispatch_bootstrap.py` | Generates the canonical dispatcher bootstrap artifact so agents do not have to remember project-memory and shared-memory separately. | Before complex routing when you want one policy-aware bootstrap step. | `python scripts/dispatch_bootstrap.py` |
+| `prepare_dispatch_context.py` | Loads project memory first, overlays shared-memory defaults second, and emits logger-ready policy telemetry fields. | Before complex routing tasks. | `python scripts/prepare_dispatch_context.py` |
+| `project_memory.py` | Manages repo-local routing memory so project conventions stay local. | When a routing fact belongs to one repository only. | `python scripts/project_memory.py <command>` |
+| `suggest_routing_promotions.py` | Scans dispatcher logs for repeated routing patterns and emits shared-memory promotion candidates. | When you want evidence-backed policy suggestions instead of manual remembering. | `python scripts/suggest_routing_promotions.py` |
 | `enforce_telemetry.py` | Audits/patches skills for logging compliance. | To ensure all skills have logging hooks. | `python scripts/enforce_telemetry.py [--patch]` |
-| `skill_md_telemetry_notice.py` | Adds/removes the telemetry paragraph and can patch missing dispatcher tags in user-installed skills. | When you want to bulk-update `SKILL.md` files under `~/.agents/skills`. | `python scripts/skill_md_telemetry_notice.py --add-paragraph [--patch-missing-tags] [--write]` |
 | `migrate_metadata_to_source.py` | Injects inferred tags into `SKILL.md` files. | To promote AI-suggested tags to source. | `python scripts/migrate_metadata_to_source.py [--no-dry-run]` |
 | `migrate_past_usage.py` | Recovers events from session history. | When bootstrapping a new environment. | `python scripts/migrate_past_usage.py [--sample]` |
 | `staleness_audit.py` | Identifies underused or obsolete skills. | During maintenance to prune your portfolio. | `python scripts/staleness_audit.py [--days 90]` |
-
-### `skill_md_telemetry_notice.py`
-
-This script scans a skills root, defaults to `~/.agents/skills`, and updates every `SKILL.md` file it finds. It runs as a dry run unless you pass `--write`. During a dry run it prints `[would save]` for each matching file, and during a live run it prints `[saved]` for each file it updates.
-
-The actions are independent, so you can run one or combine them:
-
-- `--add-paragraph`: add the standard telemetry paragraph
-- `--remove-paragraph`: remove the standard telemetry paragraph
-- `--patch-missing-tags`: add missing dispatcher tags in frontmatter
-- `--target <path>`: search a different skills root instead of `~/.agents/skills`
-- `--enrichments <path>`: use a different enrichment manifest for tag patching
-- `--write`: persist changes to disk
-
-Examples:
-
-```bash
-# Preview paragraph insertion in ~/.agents/skills
-python scripts/skill_md_telemetry_notice.py --add-paragraph
-
-# Insert the paragraph and save files
-python scripts/skill_md_telemetry_notice.py --add-paragraph --write
-
-# Remove the paragraph and save files
-python scripts/skill_md_telemetry_notice.py --remove-paragraph --write
-
-# Patch missing dispatcher tags only
-python scripts/skill_md_telemetry_notice.py --patch-missing-tags --write
-
-# Add the paragraph and patch tags in one run
-python scripts/skill_md_telemetry_notice.py --add-paragraph --patch-missing-tags --write
-```
-
-The exact paragraph added by `--add-paragraph` is:
-
-```md
-## Telemetry & Logging
-> [!IMPORTANT]
-> All usage of this skill must be logged via the Skill Dispatcher to ensure audit logs and wallboard analytics are accurate:
-> `./log-dispatch.cmd --skill <skill_name> --intent <intent> --reason <reason>` (or `./log-dispatch.sh` on Linux)
-```
-
-The exact paragraph removed by `--remove-paragraph` is that same `## Telemetry & Logging` block.
-
-When `--patch-missing-tags` is used, the script only fills in missing dispatcher tags. It does not overwrite existing values. By default it reads `config/skill_enrichments.json` to infer values for missing keys, and it can add:
-
-- `dispatcher-category`
-- `dispatcher-layer`
-- `dispatcher-lifecycle`
-- `dispatcher-risk`
-- `dispatcher-writes-files`
-- `dispatcher-capabilities`
-- `dispatcher-accepted-intents`
-- `dispatcher-input-artifacts`
-- `dispatcher-output-artifacts`
-- `dispatcher-stack-tags`
-- `dispatcher-persistent-directories`
-
-If a `SKILL.md` file has no frontmatter, paragraph operations still work, but tag patching is skipped for that file.
 
 ## ⚖️ Core Policies
 

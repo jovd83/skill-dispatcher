@@ -30,6 +30,17 @@ def validate_logging_args(args, parser):
     return parsed_skills
 
 
+def parse_boolish(raw_value):
+    if raw_value is None:
+        return None
+    normalized = str(raw_value).strip().lower()
+    if normalized in {"true", "1", "yes"}:
+        return True
+    if normalized in {"false", "0", "no"}:
+        return False
+    raise ValueError(f"Unsupported boolean value: {raw_value}")
+
+
 def check_environment():
     """Check if we are running in a potentially problematic environment (like MS Store stub)."""
     exe = sys.executable.lower()
@@ -49,21 +60,53 @@ def main():
     parser.add_argument("--intent", required=True, help="The user's original intent.")
     parser.add_argument("--reason", required=True, help="The reason for this selection.")
     parser.add_argument("--decision", default="HANDOFF", choices=["HANDOFF", "SEQUENCE", "NO_MATCH"], help="The type of matching decision made.")
+    parser.add_argument(
+        "--policy-topic",
+        help="Optional policy topic consulted before dispatch, such as RoutingPolicies.",
+    )
+    parser.add_argument(
+        "--policy-status",
+        choices=["hit", "miss", "skipped", "error"],
+        help="Optional shared/project policy lookup outcome.",
+    )
+    parser.add_argument(
+        "--policy-source",
+        choices=["project-memory", "shared-memory", "both", "none"],
+        help="Optional source that contributed policy context.",
+    )
+    parser.add_argument(
+        "--policy-hit-count",
+        type=int,
+        help="Optional number of policy entries returned by the lookup step.",
+    )
+    parser.add_argument(
+        "--policy-applied",
+        choices=["true", "false"],
+        help="Whether policy context was actually applied to the routing step.",
+    )
+    parser.add_argument(
+        "--policy-changed-routing",
+        choices=["true", "false"],
+        help="Whether the consulted policy materially changed the routing decision.",
+    )
     args = parser.parse_args()
     parsed_skills = validate_logging_args(args, parser)
 
     # Determine paths
     script_dir = Path(__file__).parent.parent
-    config_path = script_dir / "config" / "settings.json"
+    config_path = Path(os.environ.get("SKILL_DISPATCH_CONFIG_PATH", script_dir / "config" / "settings.json"))
     
     # SAFE ZONE: Persistent data location outside of the skill installation folder.
     # We use ~/.agents/dispatcher-data/ to survive 'npx skills add' updates.
     persistent_base = Path.home() / ".agents" / "dispatcher-data"
-    persistent_log_path = persistent_base / "logs" / "dispatch_events.jsonl"
+    log_path_override = os.environ.get("SKILL_DISPATCH_LOG_PATH")
+    persistent_log_path = Path(log_path_override or (persistent_base / "logs" / "dispatch_events.jsonl"))
     local_log_path = script_dir / "logs" / "dispatch_events.jsonl"
     
     # Smart Discovery & Migration
-    if ".agents" in str(script_dir.resolve()).lower():
+    if log_path_override:
+        log_path = persistent_log_path
+    elif ".agents" in str(script_dir.resolve()).lower():
         # Migration: if we have local logs but NO persistent logs yet
         if local_log_path.exists() and not persistent_log_path.exists():
             persistent_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +147,20 @@ def main():
         "decision": args.decision
     }
 
+    if args.policy_status:
+        entry["policy_lookup"] = {
+            "topic": args.policy_topic or "RoutingPolicies",
+            "status": args.policy_status,
+            "source": args.policy_source or "none",
+            "hit_count": max(0, args.policy_hit_count or 0),
+            "applied": parse_boolish(args.policy_applied) if args.policy_applied is not None else False,
+            "changed_routing": (
+                parse_boolish(args.policy_changed_routing)
+                if args.policy_changed_routing is not None
+                else False
+            ),
+        }
+
     # Ensure log directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -113,7 +170,7 @@ def main():
 
     # Auto-Update Wallboard
     generator_path = script_dir / "scripts" / "generate_wallboard.py"
-    if generator_path.exists():
+    if generator_path.exists() and os.environ.get("SKILL_DISPATCH_DISABLE_WALLBOARD") != "1":
         try:
             # Run generator as a background task
             # Use sys.executable to ensure we use the same python interpreter

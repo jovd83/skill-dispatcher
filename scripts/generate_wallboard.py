@@ -61,6 +61,27 @@ def render_secondary_skill_links(event):
     return " | ".join(render_skill_link(skill) for skill in secondary_skills)
 
 
+def render_policy_summary(event):
+    """Render a concise policy lookup summary."""
+    policy = event.get("policy_lookup")
+    if not isinstance(policy, dict):
+        return '<span class="muted-cell">none</span>'
+
+    status = html.escape(str(policy.get("status", "miss")))
+    source = html.escape(str(policy.get("source", "none")))
+    hit_count = int(policy.get("hit_count", 0) or 0)
+    topic = html.escape(str(policy.get("topic", "RoutingPolicies")), quote=True)
+    flags = []
+    if policy.get("applied"):
+        flags.append("applied")
+    if policy.get("changed_routing"):
+        flags.append("changed")
+    label = f"{status}:{source}:{hit_count}"
+    if flags:
+        label += f" | {'/'.join(flags)}"
+    return f'<span class="policy-pill" title="{topic}">{html.escape(label)}</span>'
+
+
 def render_recent_activity(event):
     """Render a single recent activity row."""
     timestamp = event["timestamp"]
@@ -80,6 +101,7 @@ def render_recent_activity(event):
         f'<td>{render_skill_link(primary_skill)}</td>'
         f'<td class="secondary-skills-cell">{render_secondary_skill_links(event)}</td>'
         f'<td class="recent-intent-cell" title="{reason}">{intent}</td>'
+        f'<td class="policy-cell">{render_policy_summary(event)}</td>'
         '</tr>'
     )
 
@@ -184,6 +206,17 @@ def main():
         "S": decision_counter.get("SEQUENCE", 0),
         "N": decision_counter.get("NO_MATCH", 0)
     }
+    policy_counter = Counter(
+        ev.get("policy_lookup", {}).get("status", "none")
+        for ev in events
+        if isinstance(ev.get("policy_lookup"), dict)
+    )
+    policy_summary = {
+        "lookups": sum(policy_counter.values()),
+        "H": policy_counter.get("hit", 0),
+        "M": policy_counter.get("miss", 0),
+        "E": policy_counter.get("error", 0),
+    }
 
     # HTML Generation
     html_content = render_html(
@@ -192,6 +225,7 @@ def main():
         most_used_count=most_used[1],
         unique_skills=unique_skills,
         decision_summary=decision_summary,
+        policy_summary=policy_summary,
         recent_events=recent,
         skills_summary=skills_counter.most_common(10),
         generated_at=utc_now(),
@@ -268,7 +302,7 @@ def markdown_to_html(md: str) -> str:
         
     return "\n".join(html)
 
-def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, recent_events, skills_summary, generated_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html):
+def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, policy_summary, recent_events, skills_summary, generated_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html):
     leaderboard_html = "".join([
         f'<div class="rank-row"><span class="clickable" onclick="showDetail(\'{name}\')">{name}</span><strong>{count}</strong></div>'
         for name, count in skills_summary
@@ -284,6 +318,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         '<th>Primary Skill</th>'
         '<th>Secondary Skills</th>'
         '<th>Intent</th>'
+        '<th>Policy</th>'
         '</tr>'
         '</thead>'
         '<tbody>'
@@ -470,7 +505,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         .grid {{
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 24px;
             margin-bottom: 40px;
         }}
@@ -548,6 +583,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .recent-activity-table th:nth-child(3) {{ width: 170px; }}
         .recent-activity-table th:nth-child(4) {{ width: 180px; }}
         .recent-activity-table th:nth-child(5) {{ width: 360px; }}
+        .recent-activity-table th:nth-child(6) {{ width: 180px; }}
 
         .recent-activity-table td:nth-child(2) {{ text-align: center; }}
 
@@ -555,12 +591,24 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .recent-time-cell small {{ opacity: 0.8; }}
         .skill-link {{ font-weight: 700; color: var(--accent); }}
         .secondary-skills-cell {{ font-size: 0.9rem; }}
+        .policy-cell {{ font-size: 0.82rem; }}
         .recent-intent-cell {{
             font-size: 0.9rem;
             max-width: 0;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }}
+        .policy-pill {{
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 0.75rem;
+            letter-spacing: 0.01em;
         }}
         .muted-cell {{ color: var(--muted); font-style: italic; }}
 
@@ -834,6 +882,10 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 <span class="stat-label">Unique Capabilities</span>
                 <div class="stat-value">{unique_skills}</div>
             </div>
+            <div class="card">
+                <span class="stat-label">Policy Lookups (H/M/E)</span>
+                <div class="stat-value"><span style="color:var(--olive)">{policy_summary['H']}</span>/<span style="color:var(--gold)">{policy_summary['M']}</span>/<span style="color:var(--muted)">{policy_summary['E']}</span></div>
+            </div>
         </section>
 
         <section class="main-content">
@@ -880,6 +932,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                         <th>Timestamp</th>
                         <th>Intent</th>
                         <th>Decision</th>
+                        <th>Policy</th>
                         <th>Reasoning</th>
                     </tr>
                 </thead>
@@ -990,6 +1043,10 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                     <span class="stat-label">Primary Mission</span>
                     <div class="stat-value" style="font-size: 1.2rem; margin-top: 12px; color: var(--muted)">${{mostCommonIntent}}</div>
                 </div>
+                <div class="card" style="grid-column: span 2">
+                    <span class="stat-label">Policy Lookups</span>
+                    <div class="stat-value" style="font-size: 1.5rem; margin-top: 10px">${{events.filter(e => e.policy_lookup).length}}</div>
+                </div>
                 <div class="card" style="grid-column: span 4">
                     <span class="stat-label">Declared Downstream Skills</span>
                     <div class="stat-value" style="font-size: 1.1rem; margin-top: 12px; color: var(--muted); line-height: 1.4">${{downstreamLabel}}</div>
@@ -1003,6 +1060,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                     <td style="color: var(--muted); font-family: monospace; font-size: 0.8rem">${{e.timestamp.replace('T', ' ').split('.')[0]}}</td>
                     <td style="font-weight: 700">${{e.intent}}</td>
                     <td><span style="font-size: 0.7rem; padding: 4px 8px; background: var(--accent-soft); color: var(--accent); border-radius: 4px; font-weight: 800">${{e.decision || 'HANDOFF'}}</span></td>
+                    <td style="color: var(--muted); font-size: 0.85rem">${{e.policy_lookup ? `${{e.policy_lookup.status}} / ${{e.policy_lookup.source}} / ${{e.policy_lookup.hit_count || 0}}` : 'none'}}</td>
                     <td style="color: var(--muted); font-size: 0.85rem">${{e.reason || e.reasoning || ''}}</td>
                 </tr>
             `).join('');
