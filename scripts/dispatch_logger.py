@@ -9,6 +9,39 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+
+def build_auto_policy_lookup(
+    skill_dispatcher_dir: Path,
+    topic: str,
+):
+    """Resolve policy lookup metadata automatically for the current routing step."""
+    try:
+        scripts_dir = Path(__file__).resolve().parent
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from prepare_dispatch_context import build_payload  # type: ignore
+
+        payload = build_payload(
+            skill_dispatcher_dir=skill_dispatcher_dir,
+            topic=topic,
+            repo_root=os.getcwd(),
+            project_memory_file=None,
+            shared_min_confidence=0.8,
+            shared_max_age_days=365,
+            shared_include_stale=False,
+        )
+        return payload.get("policy_lookup")
+    except Exception as exc:
+        return {
+            "topic": topic,
+            "status": "error",
+            "source": "none",
+            "hit_count": 0,
+            "applied": False,
+            "changed_routing": False,
+            "error": str(exc),
+        }
+
 def get_iso_now():
     return datetime.now().isoformat()
 
@@ -160,6 +193,13 @@ def main():
                 else False
             ),
         }
+    elif os.environ.get("SKILL_DISPATCH_AUTO_POLICY_LOOKUP", "1") != "0":
+        auto_policy_lookup = build_auto_policy_lookup(
+            skill_dispatcher_dir=script_dir,
+            topic=args.policy_topic or "RoutingPolicies",
+        )
+        if isinstance(auto_policy_lookup, dict):
+            entry["policy_lookup"] = auto_policy_lookup
 
     # Ensure log directory exists
     log_path.parent.mkdir(parents=True, exist_ok=True)
