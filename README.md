@@ -121,7 +121,7 @@ To ensure the **Skill Dispatcher** correctly routes to your skills, they need me
 
 ### 1. Manual Tagging (Source-First)
 Add `dispatcher-` tags directly to your `SKILL.md` frontmatter. This is the **primary source of truth**.
-- **`dispatcher-layer`**: Defines the operational layer (e.g., `execution`, `analysis`, `feedback`). Helps the dispatcher sequence tasks correctly.
+- **`dispatcher-layer`**: Defines the architectural layer (e.g., `information`, `execution`, `feedback`). Helps the dispatcher reason about capability context, control-plane sequencing, and verification roles correctly.
 - **`dispatcher-lifecycle`**: Indicates maturity (e.g., `active`, `sunset`, `archived`). Prevents routing to unstable or deprecated skills.
 - **`dispatcher-capabilities`**: What specialized actions can this skill perform? (e.g., `ui-testing`, `api-design`).
 - **`dispatcher-accepted-intents`**: Which specific routing intents does it handle? (e.g., `verify_logic`, `design_ui`).
