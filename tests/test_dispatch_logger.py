@@ -107,6 +107,43 @@ class DispatchLoggerTests(unittest.TestCase):
             self.assertTrue(payload["policy_lookup"]["applied"])
             self.assertTrue(payload["policy_lookup"]["changed_routing"])
 
+    def test_logger_captures_model_from_argument(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "dispatch_events.jsonl"
+            config_path = Path(temp_dir) / "settings.json"
+            config_path.write_text('{"logging_enabled": true}', encoding="utf-8")
+
+            env = os.environ.copy()
+            env["SKILL_DISPATCH_LOG_PATH"] = str(log_path)
+            env["SKILL_DISPATCH_CONFIG_PATH"] = str(config_path)
+            env["SKILL_DISPATCH_DISABLE_WALLBOARD"] = "1"
+            env["SKILL_DISPATCH_AUTO_POLICY_LOOKUP"] = "0"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(LOGGER),
+                    "--skill",
+                    "playwright-skill",
+                    "--intent",
+                    "implement_ui_confirmation_test",
+                    "--reason",
+                    "model telemetry regression",
+                    "--decision",
+                    "HANDOFF",
+                    "--model",
+                    "gpt-5.5",
+                ],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+            self.assertEqual(payload["model"], "gpt-5.5")
+
     def test_logger_auto_populates_policy_lookup_when_flags_are_omitted(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)

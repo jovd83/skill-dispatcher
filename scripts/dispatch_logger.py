@@ -74,6 +74,26 @@ def parse_boolish(raw_value):
     raise ValueError(f"Unsupported boolean value: {raw_value}")
 
 
+def resolve_model_name(explicit_model):
+    """Resolve the model name from CLI input or common agent environment variables."""
+    if explicit_model and explicit_model.strip():
+        return explicit_model.strip()
+
+    for env_name in (
+        "SKILL_DISPATCH_MODEL",
+        "AGENT_MODEL",
+        "CODEX_MODEL",
+        "OPENAI_MODEL",
+        "ANTHROPIC_MODEL",
+        "GOOGLE_MODEL",
+    ):
+        value = os.environ.get(env_name)
+        if value and value.strip():
+            return value.strip()
+
+    return None
+
+
 def check_environment():
     """Check if we are running in a potentially problematic environment (like MS Store stub)."""
     exe = sys.executable.lower()
@@ -121,6 +141,10 @@ def main():
         "--policy-changed-routing",
         choices=["true", "false"],
         help="Whether the consulted policy materially changed the routing decision.",
+    )
+    parser.add_argument(
+        "--model",
+        help="Optional model name used for this dispatch, such as gpt-5.5 or claude-sonnet-4.5.",
     )
     args = parser.parse_args()
     parsed_skills = validate_logging_args(args, parser)
@@ -179,6 +203,9 @@ def main():
         "reason": args.reason,
         "decision": args.decision
     }
+    model_name = resolve_model_name(args.model)
+    if model_name:
+        entry["model"] = model_name
 
     if args.policy_status:
         entry["policy_lookup"] = {

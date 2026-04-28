@@ -58,9 +58,22 @@ def render_skill_link(skill_name):
     return f'<span class="clickable skill-link" onclick="showDetail({safe_js_arg})">{safe_label}</span>'
 
 
+def render_skill_count_row(rank, skill_name, count):
+    """Render a leaderboard row for a skill and its total hit count."""
+    return (
+        '<div class="rank-row all-skill-row">'
+        f'<span class="rank-index">{rank}</span>'
+        f'<span class="all-skill-name">{render_skill_link(skill_name)}</span>'
+        f'<strong>{count}</strong>'
+        '</div>'
+    )
+
+
 def render_secondary_skill_links(event):
     """Render every non-primary skill in the event as separate detail links."""
-    secondary_skills = extract_logged_skills(event)[1:]
+    secondary_skills = event.get("_secondary_hit_skills")
+    if not isinstance(secondary_skills, list):
+        secondary_skills = extract_logged_skills(event)[1:]
     if not secondary_skills:
         return '<span class="muted-cell">none</span>'
     return " | ".join(render_skill_link(skill) for skill in secondary_skills)
@@ -97,12 +110,96 @@ def render_policy_summary(event):
     return f'<span class="policy-pill" title="{topic}">{html.escape(label)}</span>'
 
 
+def extract_model_name(event):
+    """Return the logged model name across current and legacy telemetry shapes."""
+    for key in ("model", "model_name", "llm_model", "agent_model"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    for key in ("model", "model_info", "llm"):
+        value = event.get(key)
+        if isinstance(value, dict):
+            nested = value.get("name") or value.get("model") or value.get("id")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+
+    return "Unknown model"
+
+
+def infer_model_vendor(model_name):
+    """Infer model vendor from common model name prefixes."""
+    normalized = model_name.strip().lower()
+    if normalized in {"", "unknown model"}:
+        return ("unknown", "?")
+    if normalized.startswith(("gpt-", "o1", "o3", "o4", "o5")) or "codex" in normalized:
+        return ("openai", "OA")
+    if normalized.startswith("claude") or "anthropic" in normalized:
+        return ("anthropic", "A")
+    if normalized.startswith("gemini") or "google" in normalized:
+        return ("google", "G")
+    if normalized.startswith(("llama", "meta")):
+        return ("meta", "M")
+    if normalized.startswith("mistral") or normalized.startswith("mixtral"):
+        return ("mistral", "Mi")
+    if normalized.startswith("grok") or "xai" in normalized:
+        return ("xai", "xAI")
+    if normalized.startswith("deepseek"):
+        return ("deepseek", "DS")
+    if normalized.startswith("command") or "cohere" in normalized:
+        return ("cohere", "Co")
+    return ("unknown", "?")
+
+
+SIMPLE_ICON_SLUGS = {
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "google": "googlegemini",
+    "meta": "meta",
+    "mistral": "mistralai",
+    "xai": "x",
+    "deepseek": "deepseek",
+    "cohere": "cohere",
+}
+
+
+def simple_icon_url(vendor):
+    """Return the Simple Icons CDN URL for a known vendor."""
+    slug = SIMPLE_ICON_SLUGS.get(vendor)
+    if not slug:
+        return ""
+    return f"https://cdn.jsdelivr.net/npm/simple-icons@v15/icons/{slug}.svg"
+
+
+def render_model_badge(event):
+    """Render model vendor mark and name for activity tables."""
+    model_name = extract_model_name(event)
+    vendor, logo = infer_model_vendor(model_name)
+    safe_model = html.escape(model_name)
+    safe_vendor = html.escape(vendor)
+    safe_logo = html.escape(logo)
+    icon_url = html.escape(simple_icon_url(vendor), quote=True)
+    title = html.escape(f"{vendor.title()} model: {model_name}", quote=True)
+    icon_markup = (
+        f'<img class="vendor-icon" src="{icon_url}" alt="{safe_vendor}" '
+        'onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'inline\';">'
+        if icon_url
+        else ""
+    )
+    return (
+        f'<span class="model-badge vendor-{safe_vendor}" title="{title}">'
+        f'<span class="vendor-logo">{icon_markup}<span class="vendor-fallback">{safe_logo}</span></span>'
+        f'<span class="model-name">{safe_model}</span>'
+        '</span>'
+    )
+
+
 def render_recent_activity(event):
     """Render a single recent activity row."""
     timestamp = event["timestamp"]
     date_part, time_part = timestamp.split("T", 1)
     time_label = time_part.split(".")[0]
-    primary_skill = detail_skill_name(event)
+    primary_skill = event.get("_hit_skill") or detail_skill_name(event)
     reason = html.escape(event.get("reason", ""), quote=True)
     intent = html.escape(event["intent"])
     decision = event.get("decision", "HANDOFF")
@@ -113,12 +210,14 @@ def render_recent_activity(event):
         '<tr>'
         f'<td class="recent-time-cell"><div>{date_part}</div><small>{time_label}</small></td>'
         f'<td><span class="badge {decision_class}" title="{decision_label}">{decision[0]}</span></td>'
+        f'<td>{render_model_badge(event)}</td>'
         f'<td>{render_skill_link(primary_skill)}</td>'
         f'<td class="secondary-skills-cell">{render_secondary_skill_links(event)}</td>'
         f'<td class="recent-intent-cell" title="{reason}">{intent}</td>'
         f'<td class="policy-cell">{render_policy_summary(event)}</td>'
         '</tr>'
     )
+
 
 def main():
     script_dir = Path(__file__).parent.parent
@@ -246,6 +345,7 @@ def main():
         policy_summary=policy_summary,
         recent_events=recent,
         skills_summary=skills_counter.most_common(10),
+        all_skills_summary=skills_counter.most_common(),
         consulted_at=consulted_at,
         latest_event_at=events[-1].get("timestamp", consulted_at),
         treemap_json=json.dumps(treemap_data),
@@ -321,10 +421,10 @@ def markdown_to_html(md: str) -> str:
         
     return "\n".join(html)
 
-def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, policy_summary, recent_events, skills_summary, consulted_at, latest_event_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html):
+def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, policy_summary, recent_events, skills_summary, all_skills_summary, consulted_at, latest_event_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html):
     leaderboard_html = "".join([
-        f'<div class="rank-row"><span class="clickable" onclick="showDetail(\'{name}\')">{name}</span><strong>{count}</strong></div>'
-        for name, count in skills_summary
+        render_skill_count_row(rank, name, count)
+        for rank, (name, count) in enumerate(skills_summary, start=1)
     ])
 
     timeline_html = (
@@ -334,6 +434,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         '<tr>'
         '<th>Time</th>'
         '<th>Type</th>'
+        '<th>Model</th>'
         '<th>Primary Skill</th>'
         '<th>Secondary Skills</th>'
         '<th>Intent</th>'
@@ -343,6 +444,16 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         '<tbody>'
         + "".join(render_recent_activity(event) for event in recent_events)
         + '</tbody></table></div>'
+    )
+
+    all_skills_html = (
+        '<div class="card all-skills-card">'
+        '<div class="section-kicker">Complete Leaderboard</div>'
+        + "".join(
+            render_skill_count_row(rank, name, count)
+            for rank, (name, count) in enumerate(all_skills_summary, start=1)
+        )
+        + '</div>'
     )
 
     decision_markup = (
@@ -421,9 +532,10 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         .container {{
             position: relative;
-            max-width: 1380px;
-            margin: 0 auto;
-            padding: 34px 24px 48px;
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 34px clamp(18px, 2vw, 34px) 48px;
             transition: opacity 0.3s ease;
         }}
 
@@ -627,7 +739,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         .grid {{
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: minmax(0, 1fr) minmax(300px, 1.28fr) minmax(0, 1fr) minmax(0, 1fr);
             gap: 18px;
             margin-bottom: 26px;
         }}
@@ -700,6 +812,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             display: flex;
             align-items: baseline;
             gap: 0.08em;
+            white-space: nowrap;
         }}
 
         .divider {{
@@ -746,6 +859,27 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             letter-spacing: -0.04em;
         }}
 
+        .section-heading-row {{
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 22px;
+        }}
+
+        .section-heading-row h2 {{
+            margin-bottom: 0;
+        }}
+
+        .all-link {{
+            color: var(--accent);
+            font-size: 0.92rem;
+            font-weight: 800;
+            text-decoration: underline dotted;
+            text-underline-offset: 4px;
+            white-space: nowrap;
+        }}
+
         .section-kicker {{
             margin-bottom: 10px;
             color: var(--muted);
@@ -767,6 +901,28 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .rank-row strong {{
             font-size: 1.35rem;
             letter-spacing: -0.04em;
+        }}
+
+        .all-skill-row {{
+            display: grid;
+            grid-template-columns: 44px minmax(0, 1fr) minmax(72px, auto);
+            align-items: center;
+        }}
+
+        .rank-index {{
+            color: var(--muted);
+            font-size: 0.86rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+        }}
+
+        .all-skill-name {{
+            min-width: 0;
+        }}
+
+        .all-skills-card {{
+            max-width: 980px;
+            margin: 0 auto;
         }}
 
         .badge {{
@@ -794,10 +950,11 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         .recent-activity-table th:nth-child(1) {{ width: 132px; }}
         .recent-activity-table th:nth-child(2) {{ width: 64px; text-align: center; }}
-        .recent-activity-table th:nth-child(3) {{ width: 170px; }}
-        .recent-activity-table th:nth-child(4) {{ width: 180px; }}
-        .recent-activity-table th:nth-child(5) {{ width: 360px; }}
-        .recent-activity-table th:nth-child(6) {{ width: 180px; }}
+        .recent-activity-table th:nth-child(3) {{ width: 220px; }}
+        .recent-activity-table th:nth-child(4) {{ width: 170px; }}
+        .recent-activity-table th:nth-child(5) {{ width: 180px; }}
+        .recent-activity-table th:nth-child(6) {{ width: 360px; }}
+        .recent-activity-table th:nth-child(7) {{ width: 180px; }}
         .recent-activity-table td:nth-child(2) {{ text-align: center; }}
 
         .recent-time-cell {{ color: var(--muted); font-size: 0.88rem; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }}
@@ -827,6 +984,70 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         }}
 
         .muted-cell {{ color: var(--muted); font-style: italic; }}
+
+        .model-badge {{
+            display: inline-flex;
+            align-items: center;
+            max-width: 100%;
+            gap: 10px;
+            padding: 7px 10px 7px 7px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.62);
+            border: 1px solid rgba(120, 89, 53, 0.13);
+            color: var(--ink);
+            font-weight: 700;
+            line-height: 1.1;
+        }}
+
+        .vendor-logo {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            color: white;
+            font-size: 0.64rem;
+            font-weight: 900;
+            letter-spacing: 0;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);
+        }}
+
+        .vendor-icon {{
+            width: 17px;
+            height: 17px;
+            object-fit: contain;
+            filter: invert(1);
+        }}
+
+        .vendor-fallback {{
+            display: none;
+        }}
+
+        .model-name {{
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+
+        .vendor-unknown .vendor-fallback {{
+            display: inline;
+        }}
+
+        .vendor-openai .vendor-logo {{ background: #111111; }}
+        .vendor-anthropic .vendor-logo {{ background: #543f32; }}
+        .vendor-google .vendor-logo {{ background: linear-gradient(135deg, #4285f4, #34a853 48%, #fbbc04 76%, #ea4335); }}
+        .vendor-meta .vendor-logo {{ background: #0866ff; }}
+        .vendor-mistral .vendor-logo {{ background: #f06f2f; }}
+        .vendor-xai .vendor-logo {{ background: #222222; }}
+        .vendor-deepseek .vendor-logo {{ background: #4a69ff; }}
+        .vendor-cohere .vendor-logo {{ background: #39594d; }}
+        .vendor-unknown {{
+            color: var(--muted);
+        }}
+        .vendor-unknown .vendor-logo {{ background: #9b8c7a; }}
 
         .integrity-card {{
             padding: 16px 18px;
@@ -950,6 +1171,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         }}
 
         .detail-shell,
+        .all-activity-shell,
         .staleness-shell {{
             display: none;
             position: fixed;
@@ -964,6 +1186,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         body.detail-mode .container, body.detail-mode .wall-shell {{ display: none; }}
         body.detail-mode .detail-shell {{ display: block; }}
+        body.all-activity-mode .container, body.all-activity-mode .wall-shell {{ display: none; }}
+        body.all-activity-mode .all-activity-shell {{ display: block; }}
         body.staleness-mode .container, body.staleness-mode .wall-shell {{ display: none; }}
         body.staleness-mode .staleness-shell {{ display: block; }}
 
@@ -1042,7 +1266,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             }}
 
             .recent-activity-table {{
-                min-width: 900px;
+                min-width: 1120px;
             }}
         }}
 
@@ -1133,7 +1357,10 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         <section class="main-content">
             <div class="card">
                 <div class="section-kicker">Leaderboard</div>
-                <h2>Top Performers</h2>
+                <div class="section-heading-row">
+                    <h2>Top Performers</h2>
+                    <a href="?view=all-activity" class="all-link">(All)</a>
+                </div>
                 {leaderboard_html}
                 <div class="environment-block">
                     <span class="stat-label">Environment</span>
@@ -1157,6 +1384,18 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         <div class="wall-grid-container" id="wallboard"></div>
     </div>
 
+    <!-- All Activity View -->
+    <div class="all-activity-shell" id="all-activity-view">
+        <div class="detail-header">
+            <div>
+                <span class="stat-label">Complete Leaderboard</span>
+                <h1>All Skills</h1>
+            </div>
+            <button class="btn" onclick="goHome()">Back to Overview</button>
+        </div>
+        {all_skills_html}
+    </div>
+
     <!-- Skill Detail View -->
     <div class="detail-shell" id="details">
         <div class="detail-header">
@@ -1174,6 +1413,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 <thead>
                     <tr>
                         <th>Timestamp</th>
+                        <th>Model</th>
                         <th>Intent</th>
                         <th>Decision</th>
                         <th>Policy</th>
@@ -1254,7 +1494,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             else url.searchParams.delete('skill');
             window.history.replaceState({{}}, '', url);
             
-            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'staleness-mode');
+            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'staleness-mode');
             
             if (view === 'wallboard') {{
                 document.getElementById('body').classList.add('radiator-mode');
@@ -1262,6 +1502,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             }} else if (view === 'detail') {{
                 document.getElementById('body').classList.add('detail-mode');
                 renderDetail(skill);
+            }} else if (view === 'all-activity') {{
+                document.getElementById('body').classList.add('all-activity-mode');
             }} else if (view === 'staleness') {{
                 document.getElementById('body').classList.add('staleness-mode');
             }}
@@ -1282,6 +1524,80 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         function toggleHelp() {{
             document.getElementById('orchestration-help').classList.toggle('active');
+        }}
+
+        function escapeHtml(value) {{
+            return String(value).replace(/[&<>"']/g, char => ({{
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }}[char]));
+        }}
+
+        function modelNameForEvent(event) {{
+            for (const key of ['model', 'model_name', 'llm_model', 'agent_model']) {{
+                if (typeof event[key] === 'string' && event[key].trim()) {{
+                    return event[key].trim();
+                }}
+            }}
+            for (const key of ['model', 'model_info', 'llm']) {{
+                const value = event[key];
+                if (value && typeof value === 'object') {{
+                    const nested = value.name || value.model || value.id;
+                    if (typeof nested === 'string' && nested.trim()) {{
+                        return nested.trim();
+                    }}
+                }}
+            }}
+            return 'Unknown model';
+        }}
+
+        function vendorForModel(modelName) {{
+            const normalized = modelName.trim().toLowerCase();
+            if (!normalized || normalized === 'unknown model') return ['unknown', '?'];
+            if (normalized.startsWith('gpt-') || /^o[1345]/.test(normalized) || normalized.includes('codex')) return ['openai', 'OA'];
+            if (normalized.startsWith('claude') || normalized.includes('anthropic')) return ['anthropic', 'A'];
+            if (normalized.startsWith('gemini') || normalized.includes('google')) return ['google', 'G'];
+            if (normalized.startsWith('llama') || normalized.startsWith('meta')) return ['meta', 'M'];
+            if (normalized.startsWith('mistral') || normalized.startsWith('mixtral')) return ['mistral', 'Mi'];
+            if (normalized.startsWith('grok') || normalized.includes('xai')) return ['xai', 'xAI'];
+            if (normalized.startsWith('deepseek')) return ['deepseek', 'DS'];
+            if (normalized.startsWith('command') || normalized.includes('cohere')) return ['cohere', 'Co'];
+            return ['unknown', '?'];
+        }}
+
+        const SIMPLE_ICON_SLUGS = {{
+            openai: 'openai',
+            anthropic: 'anthropic',
+            google: 'googlegemini',
+            meta: 'meta',
+            mistral: 'mistralai',
+            xai: 'x',
+            deepseek: 'deepseek',
+            cohere: 'cohere'
+        }};
+
+        function simpleIconUrl(vendor) {{
+            const slug = SIMPLE_ICON_SLUGS[vendor];
+            return slug ? `https://cdn.jsdelivr.net/npm/simple-icons@v15/icons/${{slug}}.svg` : '';
+        }}
+
+        function renderModelBadge(event) {{
+            const modelName = modelNameForEvent(event);
+            const [vendor, logo] = vendorForModel(modelName);
+            const safeModelName = escapeHtml(modelName);
+            const safeVendor = escapeHtml(vendor);
+            const safeLogo = escapeHtml(logo);
+            const iconUrl = simpleIconUrl(vendor);
+            const iconMarkup = iconUrl
+                ? `<img class="vendor-icon" src="${{escapeHtml(iconUrl)}}" alt="${{safeVendor}}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">`
+                : '';
+            return `<span class="model-badge vendor-${{safeVendor}}" title="${{safeVendor}} model: ${{safeModelName}}">
+                <span class="vendor-logo">${{iconMarkup}}<span class="vendor-fallback">${{safeLogo}}</span></span>
+                <span class="model-name">${{safeModelName}}</span>
+            </span>`;
         }}
 
         function renderDetail(skillName) {{
@@ -1342,6 +1658,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             tbody.innerHTML = events.map(e => `
                 <tr>
                     <td style="color: var(--muted); font-family: monospace; font-size: 0.8rem">${{e.timestamp.replace('T', ' ').split('.')[0]}}</td>
+                    <td>${{renderModelBadge(e)}}</td>
                     <td style="font-weight: 700">${{e.intent}}</td>
                     <td><span style="font-size: 0.7rem; padding: 4px 8px; background: var(--accent-soft); color: var(--accent); border-radius: 4px; font-weight: 800">${{e.decision || 'HANDOFF'}}</span></td>
                     <td style="color: var(--muted); font-size: 0.85rem">${{e.policy_lookup ? `${{e.policy_lookup.status}} / ${{e.policy_lookup.source}} / ${{e.policy_lookup.hit_count || 0}}` : 'none'}}</td>
@@ -1461,6 +1778,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 setView('wallboard');
             }} else if (view === 'detail' && skill) {{
                 setView('detail', skill);
+            }} else if (view === 'all-activity') {{
+                setView('all-activity');
             }} else if (view === 'staleness') {{
                 setView('staleness');
             }}
