@@ -91,6 +91,10 @@ def resolve_model_name(explicit_model):
         if value and value.strip():
             return value.strip()
 
+    codex_originator = os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE")
+    if codex_originator and codex_originator.strip():
+        return "Codex"
+
     return None
 
 
