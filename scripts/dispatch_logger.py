@@ -86,14 +86,13 @@ def resolve_model_name(explicit_model):
         "OPENAI_MODEL",
         "ANTHROPIC_MODEL",
         "GOOGLE_MODEL",
+        "GEMINI_MODEL",
+        "GOOGLE_GENAI_MODEL",
+        "GOOGLE_GENERATIVE_AI_MODEL",
     ):
         value = os.environ.get(env_name)
         if value and value.strip():
             return value.strip()
-
-    codex_originator = os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE")
-    if codex_originator and codex_originator.strip():
-        return "Codex"
 
     return None
 

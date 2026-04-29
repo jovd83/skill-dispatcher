@@ -144,7 +144,7 @@ class DispatchLoggerTests(unittest.TestCase):
             payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
             self.assertEqual(payload["model"], "gpt-5.5")
 
-    def test_logger_captures_codex_runtime_as_model_when_no_model_is_exposed(self):
+    def test_logger_ignores_inherited_codex_originator_when_no_model_is_exposed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             log_path = Path(temp_dir) / "dispatch_events.jsonl"
             config_path = Path(temp_dir) / "settings.json"
@@ -180,7 +180,44 @@ class DispatchLoggerTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
-            self.assertEqual(payload["model"], "Codex")
+            self.assertNotIn("model", payload)
+
+    def test_logger_captures_gemini_model_from_environment(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "dispatch_events.jsonl"
+            config_path = Path(temp_dir) / "settings.json"
+            config_path.write_text('{"logging_enabled": true}', encoding="utf-8")
+
+            env = os.environ.copy()
+            env["SKILL_DISPATCH_LOG_PATH"] = str(log_path)
+            env["SKILL_DISPATCH_CONFIG_PATH"] = str(config_path)
+            env["SKILL_DISPATCH_DISABLE_WALLBOARD"] = "1"
+            env["SKILL_DISPATCH_AUTO_POLICY_LOOKUP"] = "0"
+            env["GEMINI_MODEL"] = "gemini-2.5-pro"
+            env["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] = "codex_vscode"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(LOGGER),
+                    "--skill",
+                    "test-design-orchestrator",
+                    "--intent",
+                    "design_confirmation_tests",
+                    "--reason",
+                    "gemini model telemetry regression",
+                    "--decision",
+                    "HANDOFF",
+                ],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+            self.assertEqual(payload["model"], "gemini-2.5-pro")
 
     def test_logger_auto_populates_policy_lookup_when_flags_are_omitted(self):
         with tempfile.TemporaryDirectory() as temp_dir:
