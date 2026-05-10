@@ -408,14 +408,68 @@ def _parse_iso(timestamp: str):
         return None
 
 
-def compute_chains(events, max_chains: int = 20):
-    """Group events by chain_id; return chain summaries sorted newest-first.
+import re as _re
 
-    Each chain summary:
-        chain_id, chain_skill (entry skill), started, duration_sec,
-        phases (deduplicated start events only), failed_count, total_tokens
-    Events without a chain_id are ignored.
+
+def _build_chain_summary(chain_skill, chain_id, all_events, first_dt, chain_defs):
+    """Build a chain summary dict from a list of events sharing a logical chain."""
+    if not all_events:
+        return None
+    all_events = sorted(all_events, key=lambda e: e.get("timestamp", ""))
+    first_ts = all_events[0].get("timestamp", "")
+    last_ts  = all_events[-1].get("timestamp", first_ts)
+    last_dt  = _parse_iso(last_ts)
+    duration_sec = (last_dt - first_dt).total_seconds() if (last_dt and first_dt) else 0.0
+
+    seen_skills = {}
+    ordered = []
+    for ev in all_events:
+        if ev.get("decision") == "SEQUENCE" and "chain_initiated" in ev.get("reason", ""):
+            continue
+        skill  = ev.get("selected_skill", "?")
+        status = ev.get("phase_status", "")
+        ev_dt  = _parse_iso(ev.get("timestamp", ""))
+        dt     = (ev_dt - first_dt).total_seconds() if (ev_dt and first_dt) else 0.0
+        entry  = {"ts": ev.get("timestamp",""), "decision": ev.get("decision","HANDOFF"),
+                  "skill": skill, "intent": ev.get("intent",""), "dt": dt, "status": status}
+        if skill in seen_skills:
+            if status:
+                ordered[seen_skills[skill]] = entry
+        else:
+            seen_skills[skill] = len(ordered)
+            ordered.append(entry)
+
+    total_tokens = sum(
+        int(m.group(1))
+        for ev in all_events
+        for m in [_re.search(r"tokens=(\d+)", ev.get("reason", ""))]
+        if m
+    )
+    return {
+        "chain_id":    chain_id,
+        "chain_skill": chain_skill,
+        "started":     first_ts,
+        "duration_sec": duration_sec,
+        "phases":      ordered,
+        "failed_count": sum(1 for p in ordered if p["status"] == "failed"),
+        "total_tokens": total_tokens,
+    }
+
+
+def compute_chains(events, chain_defs=None, max_chains: int = 20):
+    """Group events into chain summaries, sorted newest-first.
+
+    Strategy 1 — shared chain_id (orchestrate.py --execute path):
+        All events with the same chain_id are one chain. The chain-skill name
+        comes from the SEQUENCE chain_initiated entry event.
+
+    Strategy 2 — time-window inference (Claude Code direct invocation):
+        When a chain-entry SEQUENCE event is followed by events whose skills appear
+        in that chain's definition, within a 20-minute window and each with its own
+        solo chain_id, merge them under the parent chain. This handles the common
+        case where the model calls sub-skills individually without shared chain_id.
     """
+    chain_defs = chain_defs or {}
     by_chain = {}
     for ev in events:
         cid = ev.get("chain_id")
@@ -423,74 +477,97 @@ def compute_chains(events, max_chains: int = 20):
             continue
         by_chain.setdefault(cid, []).append(ev)
 
-    chains = []
+    # Solo chain_ids: exactly one event (or one start + one complete for same skill)
+    solo_ids = {cid for cid, evs in by_chain.items() if len(evs) <= 2}
+
+    # --- Strategy 1: true shared chain_id chains ---
+    true_chains = {}  # chain_id -> summary
     for cid, chain_events in by_chain.items():
-        chain_events.sort(key=lambda e: e.get("timestamp", ""))
-        first_ts = chain_events[0].get("timestamp", "")
-        last_ts = chain_events[-1].get("timestamp", first_ts)
-        first_dt = _parse_iso(first_ts)
-        last_dt = _parse_iso(last_ts)
-        duration_sec = (last_dt - first_dt).total_seconds() if (first_dt and last_dt) else 0.0
+        if cid in solo_ids:
+            continue
+        chain_events = sorted(chain_events, key=lambda e: e.get("timestamp", ""))
+        chain_skill = next(
+            (e.get("selected_skill", "unknown") for e in chain_events
+             if e.get("decision") == "SEQUENCE" and "chain_initiated" in e.get("reason", "")),
+            chain_events[0].get("selected_skill", "unknown"),
+        )
+        first_dt = _parse_iso(chain_events[0].get("timestamp", ""))
+        s = _build_chain_summary(chain_skill, cid, chain_events, first_dt, chain_defs)
+        if s:
+            true_chains[cid] = s
 
-        # Chain-skill name: from the SEQUENCE event with reason=chain_initiated
-        chain_skill = "unknown"
-        for ev in chain_events:
-            if ev.get("decision") == "SEQUENCE" and "chain_initiated" in ev.get("reason", ""):
-                chain_skill = ev.get("selected_skill", "unknown")
+    # --- Strategy 2: infer chains from time-window proximity ---
+    # Build lookup: which chain_defs contain each skill name
+    skill_to_chain = {}
+    for chain_name, phases in chain_defs.items():
+        for ph in phases:
+            sk = ph.get("skill")
+            if sk:
+                skill_to_chain.setdefault(sk, []).append(chain_name)
+
+    # Find entry events: any dispatch to a skill that has a chain_definition,
+    # whether it arrived via SEQUENCE+chain_initiated (orchestrate.py) or plain HANDOFF
+    # (direct model invocation). The chain_defs key is the canonical identifier.
+    entry_events = []
+    for cid in solo_ids:
+        for ev in by_chain[cid]:
+            skill = ev.get("selected_skill", "")
+            if skill in chain_defs:
+                entry_events.append((ev, cid))
                 break
-        if chain_skill == "unknown" and chain_events:
-            chain_skill = chain_events[0].get("selected_skill", "unknown")
 
-        # Phases: deduplicate — keep only phase-start events (exclude phase-complete duplicates).
-        # Phase-complete events carry phase_status; phase-start events for the same skill precede them.
-        # Strategy: if a skill appears twice in sequence, keep only the one with phase_status (final state).
-        seen_skills = {}
-        ordered = []
-        for ev in chain_events:
-            if ev.get("decision") == "SEQUENCE" and "chain_initiated" in ev.get("reason", ""):
-                continue  # skip the chain entry event from the phase list
-            skill = ev.get("selected_skill", "?")
-            status = ev.get("phase_status", "")
-            ev_dt = _parse_iso(ev.get("timestamp", ""))
-            dt_from_start = (ev_dt - first_dt).total_seconds() if (ev_dt and first_dt) else 0.0
-            entry = {
-                "ts": ev.get("timestamp", ""),
-                "decision": ev.get("decision", "HANDOFF"),
-                "skill": skill,
-                "intent": ev.get("intent", ""),
-                "dt": dt_from_start,
-                "status": status,
-            }
-            if skill in seen_skills:
-                idx = seen_skills[skill]
-                if status:  # prefer the event that carries a final phase_status
-                    ordered[idx] = entry
-            else:
-                seen_skills[skill] = len(ordered)
-                ordered.append(entry)
+    inferred = {}  # chain_name -> merged summary
+    claimed_solo_ids = set()  # solo chain_ids absorbed into an inferred chain
 
-        failed_count = sum(1 for p in ordered if p["status"] == "failed")
+    for entry_ev, entry_cid in entry_events:
+        chain_skill = entry_ev.get("selected_skill", "unknown")
+        if chain_skill not in chain_defs:
+            continue
+        defined_skills = {ph.get("skill") for ph in chain_defs[chain_skill] if ph.get("skill")}
+        entry_dt = _parse_iso(entry_ev.get("timestamp", ""))
+        if not entry_dt:
+            continue
 
-        # Token total: extract from reason fields like "tokens=1234"
-        import re as _re
-        total_tokens = 0
-        for ev in chain_events:
-            m = _re.search(r"tokens=(\d+)", ev.get("reason", ""))
-            if m:
-                total_tokens += int(m.group(1))
+        # Collect solo events within 20 minutes whose skill is in this chain's definition
+        window_sec = 20 * 60
+        related = [entry_ev]
+        related_cids = {entry_cid}
+        for cid in solo_ids:
+            if cid in related_cids:
+                continue
+            for ev in by_chain[cid]:
+                ev_skill = ev.get("selected_skill", "")
+                if ev_skill not in defined_skills:
+                    continue
+                ev_dt = _parse_iso(ev.get("timestamp", ""))
+                if ev_dt and 0 <= (ev_dt - entry_dt).total_seconds() <= window_sec:
+                    related.append(ev)
+                    related_cids.add(cid)
+                    break
 
-        chains.append({
-            "chain_id": cid,
-            "chain_skill": chain_skill,
-            "started": first_ts,
-            "duration_sec": duration_sec,
-            "phases": ordered,
-            "failed_count": failed_count,
-            "total_tokens": total_tokens,
-        })
+        if len(related) < 2:
+            continue  # only the entry event — not a real chain match
 
-    chains.sort(key=lambda c: c["started"], reverse=True)
-    return chains[:max_chains]
+        s = _build_chain_summary(chain_skill, entry_cid, related, entry_dt, chain_defs)
+        if s:
+            inferred[chain_skill + entry_cid] = s
+            claimed_solo_ids.update(related_cids)
+
+    # Remaining unclaimed solo chains rendered individually
+    solo_chains = {}
+    for cid in solo_ids:
+        if cid in claimed_solo_ids:
+            continue
+        chain_events = sorted(by_chain[cid], key=lambda e: e.get("timestamp", ""))
+        chain_skill = chain_events[0].get("selected_skill", "unknown")
+        first_dt = _parse_iso(chain_events[0].get("timestamp", ""))
+        s = _build_chain_summary(chain_skill, cid, chain_events, first_dt, chain_defs)
+        if s:
+            solo_chains[cid] = s
+
+    all_chains = list(true_chains.values()) + list(inferred.values()) + list(solo_chains.values())
+    all_chains.sort(key=lambda c: c["started"], reverse=True)
+    return all_chains[:max_chains]
 
 
 def load_chain_definitions() -> dict:
@@ -520,7 +597,7 @@ def render_chains_section(events, chain_defs=None) -> str:
     One card per chain. Each card shows the full phase stepper from chain_definition.json
     with status overlaid: green (done), red (failed), amber (agent-handled), grey (not reached).
     """
-    chains = compute_chains(events)
+    chains = compute_chains(events, chain_defs=chain_defs)
     chain_defs = chain_defs or {}
 
     if not chains:
@@ -1478,10 +1555,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             font-size: 1.05rem;
             color: #1a237e;
             flex: 1;
-            min-width: 0;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            min-width: 120px;
+            word-break: break-word;
         }}
         .chn-id {{
             font-family: 'Consolas','Menlo',monospace;
