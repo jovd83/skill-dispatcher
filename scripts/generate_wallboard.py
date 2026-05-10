@@ -518,8 +518,8 @@ def compute_chains(events, chain_defs=None, max_chains: int = 20):
     # --- Strategy 2: infer chains from time-window proximity ---
     # Build lookup: which chain_defs contain each skill name
     skill_to_chain = {}
-    for chain_name, phases in chain_defs.items():
-        for ph in phases:
+    for chain_name, chain_data in chain_defs.items():
+        for ph in chain_data.get("phases", []):
             sk = ph.get("skill")
             if sk:
                 skill_to_chain.setdefault(sk, []).append(chain_name)
@@ -542,7 +542,7 @@ def compute_chains(events, chain_defs=None, max_chains: int = 20):
         chain_skill = entry_ev.get("selected_skill", "unknown")
         if chain_skill not in chain_defs:
             continue
-        defined_skills = {ph.get("skill") for ph in chain_defs[chain_skill] if ph.get("skill")}
+        defined_skills = {ph.get("skill") for ph in chain_defs.get(chain_skill, {}).get("phases", []) if ph.get("skill")}
         entry_dt = _parse_iso(entry_ev.get("timestamp", ""))
         if not entry_dt:
             continue
@@ -591,23 +591,84 @@ def compute_chains(events, chain_defs=None, max_chains: int = 20):
 
 def load_chain_definitions() -> dict:
     """Load chain_definition.json files from the runtime skills tree.
-    Returns {chain_skill_name: [phase_dicts, ...]}.
+    Returns {chain_skill_name: {"phases": [...], "description": str}}.
     """
     skills_root = Path.home() / ".agents" / "skills"
     result = {}
     if not skills_root.exists():
         return result
-    for skill_dir in skills_root.iterdir():
+    for skill_dir in sorted(skills_root.iterdir()):
         cd = skill_dir / "config" / "chain_definition.json"
         if not cd.exists():
             continue
         try:
             data = json.loads(cd.read_text(encoding="utf-8"))
             name = data.get("chain_name", skill_dir.name)
-            result[name] = data.get("phases", [])
+            result[name] = {
+                "phases":      data.get("phases", []),
+                "description": data.get("description", ""),
+            }
         except Exception:
             pass
     return result
+
+
+def render_all_chains_html(chain_defs: dict) -> str:
+    """Render all defined chains as blueprint documentation cards."""
+    if not chain_defs:
+        return '<p style="color:#999;font-size:0.9rem">No chain definitions found in ~/.agents/skills/*/config/chain_definition.json</p>'
+
+    cards = []
+    for chain_name, chain_data in sorted(chain_defs.items()):
+        phases = chain_data.get("phases", [])
+        description = chain_data.get("description", "")
+
+        steps = []
+        for i, phase in enumerate(phases):
+            phase_skill = phase.get("skill")
+            phase_name  = phase.get("name", phase_skill or "agent")
+            short = phase_name
+            for sep in (" — ", " - "):
+                if sep in short:
+                    short = short.split(sep, 1)[-1]
+            short = short[:36]
+
+            is_agent = phase_skill is None
+            note      = html.escape(phase_skill or "agent-handled", quote=True)
+            node_cls  = "sn-bp-agent" if is_agent else "sn-bp"
+            lbl_cls   = "sl-bp-agent" if is_agent else "sl-bp"
+            skill_tag = html.escape((phase_skill or "agent")[:22])
+            conn_html = (
+                '<div class="step-conn sc-bp"></div>'
+                if i < len(phases) - 1 else ""
+            )
+            steps.append(
+                f'<div class="chain-step-wrap">'
+                f'<div class="chain-step">'
+                f'<div class="step-node {node_cls}" title="{note}"></div>'
+                f'<div class="step-label {lbl_cls}">{html.escape(short)}</div>'
+                f'<div class="step-skill-tag">{skill_tag}</div>'
+                f'</div>'
+                f'{conn_html}'
+                f'</div>'
+            )
+
+        desc_html = (
+            f'<p class="chain-def-desc">{html.escape(description)}</p>'
+            if description else ""
+        )
+        cards.append(
+            f'<div class="chain-def-card">'
+            f'<div class="chain-def-hdr">'
+            f'<span class="chain-def-name">{html.escape(chain_name)}</span>'
+            f'<span class="chain-def-count">{len(phases)} phases</span>'
+            f'</div>'
+            f'{desc_html}'
+            f'<div class="chain-track">{"".join(steps)}</div>'
+            f'</div>'
+        )
+
+    return "\n".join(cards)
 
 
 def render_chains_section(events, chain_defs=None) -> str:
@@ -652,7 +713,7 @@ def render_chains_section(events, chain_defs=None) -> str:
         executed = {p["skill"]: p for p in chain["phases"]}
 
         # Get the full phase list from the chain definition if available
-        defined = chain_defs.get(chain_skill, [])
+        defined = chain_defs.get(chain_skill, {}).get("phases", [])
         if not defined:
             # No definition: synthesise from executed events only
             defined = [
@@ -734,7 +795,10 @@ def render_chains_section(events, chain_defs=None) -> str:
     return (
         '<div class="card chains-card">'
         '<div class="section-kicker">Chains</div>'
+        '<div class="section-heading-row">'
         '<h2>Orchestrator Chains</h2>'
+        '<a href="?view=all-chains" class="all-link">Show all defined chains</a>'
+        '</div>'
         + "".join(cards)
         + '</div>'
     )
@@ -867,6 +931,7 @@ def main():
     # Chain analytics — load definitions so stepper shows all phases, not just executed ones
     chain_defs = load_chain_definitions()
     chains_html = render_chains_section(events, chain_defs)
+    all_chains_html = render_all_chains_html(chain_defs)
 
     # Per-skill failure stats: count phase_status occurrences per selected_skill.
     # Skills with no phase_status events at all simply don't display a rate.
@@ -902,6 +967,7 @@ def main():
         environment_info=environment_info,
         staleness_html=staleness_html,
         chains_html=chains_html,
+        all_chains_html=all_chains_html,
         failure_stats_dict=failure_stats_dict,
         token_cost_html=token_cost_html,
         token_cost_count=len(token_cost_items),
@@ -973,7 +1039,7 @@ def markdown_to_html(md: str) -> str:
         
     return "\n".join(html)
 
-def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, policy_summary, recent_events, skills_summary, all_skills_summary, consulted_at, latest_event_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html, chains_html="", token_cost_html=None, token_cost_count=0, models_summary=None, failure_stats_dict=None):
+def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, policy_summary, recent_events, skills_summary, all_skills_summary, consulted_at, latest_event_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html, chains_html="", token_cost_html=None, token_cost_count=0, models_summary=None, failure_stats_dict=None, all_chains_html=""):
     leaderboard_html = "".join([
         render_skill_count_row(rank, name, count)
         for rank, (name, count) in enumerate(skills_summary, start=1)
@@ -1703,6 +1769,45 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             font-family: 'Consolas','Menlo',monospace;
             margin-top: 2px;
         }}
+        /* Blueprint (chain definition) styles */
+        .sn-bp       {{ background:#e3f2fd; border-color:#1565c0; }}
+        .sn-bp-agent {{ background:#fff3e0; border-color:#e65100; }}
+        .sl-bp       {{ color:#1565c0; font-weight:600; }}
+        .sl-bp-agent {{ color:#e65100; }}
+        .sc-bp       {{ background:#90caf9; }}
+        .step-skill-tag {{
+            font-size: 0.52rem;
+            color: #aaa;
+            text-align: center;
+            font-family: 'Consolas','Menlo',monospace;
+            margin-top: 2px;
+            max-width: 108px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        .chain-def-card {{
+            border: 1px solid rgba(21,101,192,0.15);
+            border-radius: 14px;
+            padding: 16px 20px 18px;
+            margin-bottom: 18px;
+            background: rgba(227,242,253,0.25);
+        }}
+        .chain-def-hdr {{
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 10px;
+        }}
+        .chain-def-name {{ font-weight:800; font-size:1.1rem; color:#1a237e; }}
+        .chain-def-count {{ color:#888; font-size:0.78rem; }}
+        .chain-def-desc  {{
+            font-size: 0.82rem;
+            color: #5d4037;
+            font-style: italic;
+            margin: 0 0 14px;
+            opacity: 0.85;
+        }}
 
         .failure-rate {{
             display: inline-block;
@@ -1943,6 +2048,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .detail-shell,
         .all-activity-shell,
         .all-models-shell,
+        .all-chains-shell,
         .staleness-shell,
         .token-cost-shell {{
             display: none;
@@ -1962,6 +2068,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         body.all-activity-mode .all-activity-shell {{ display: block; }}
         body.all-models-mode .container, body.all-models-mode .wall-shell {{ display: none; }}
         body.all-models-mode .all-models-shell {{ display: block; }}
+        body.all-chains-mode .container, body.all-chains-mode .wall-shell {{ display: none; }}
+        body.all-chains-mode .all-chains-shell {{ display: block; }}
         body.staleness-mode .container, body.staleness-mode .wall-shell {{ display: none; }}
         body.staleness-mode .staleness-shell {{ display: block; }}
         body.token-cost-mode .container, body.token-cost-mode .wall-shell {{ display: none; }}
@@ -2214,6 +2322,26 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         </div>
     </div>
 
+    <!-- All Defined Chains View -->
+    <div class="all-chains-shell" id="all-chains-view">
+        <div class="detail-header">
+            <div>
+                <span class="stat-label">Chain Definitions</span>
+                <h1>All Defined Chains</h1>
+            </div>
+            <button class="btn" onclick="goHome()">Back to Overview</button>
+        </div>
+        <div class="card" style="max-width:1400px;margin:0 auto;">
+            <div class="section-kicker">Blueprints</div>
+            <p style="color:#888;font-size:0.85rem;margin:0 0 24px">
+                Each card shows the full phase definition of a chain-capable skill.
+                Blue nodes are skill-handled phases; amber nodes are agent-handled.
+                Status colors (green/red) appear in the Orchestrator Chains section once a chain has been executed.
+            </p>
+            {all_chains_html}
+        </div>
+    </div>
+
     <!-- Staleness Report View -->
     <div class="staleness-shell" id="staleness-view">
         <div class="detail-header">
@@ -2302,7 +2430,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             else url.searchParams.delete('skill');
             window.history.replaceState({{}}, '', url);
             
-            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'all-models-mode', 'staleness-mode', 'token-cost-mode');
+            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'all-models-mode', 'all-chains-mode', 'staleness-mode', 'token-cost-mode');
 
             if (view === 'wallboard') {{
                 document.getElementById('body').classList.add('radiator-mode');
@@ -2314,6 +2442,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 document.getElementById('body').classList.add('all-activity-mode');
             }} else if (view === 'all-models') {{
                 document.getElementById('body').classList.add('all-models-mode');
+            }} else if (view === 'all-chains') {{
+                document.getElementById('body').classList.add('all-chains-mode');
             }} else if (view === 'staleness') {{
                 document.getElementById('body').classList.add('staleness-mode');
             }} else if (view === 'token-cost') {{
@@ -2594,6 +2724,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 setView('all-activity');
             }} else if (view === 'all-models') {{
                 setView('all-models');
+            }} else if (view === 'all-chains') {{
+                setView('all-chains');
             }} else if (view === 'staleness') {{
                 setView('staleness');
             }} else if (view === 'token-cost') {{
