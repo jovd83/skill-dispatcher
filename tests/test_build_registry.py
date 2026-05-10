@@ -81,7 +81,7 @@ metadata:
                 encoding="utf-8",
             )
 
-            skills = self.module.find_skills([Path(temp_dir)])
+            skills, _ = self.module.find_skills([Path(temp_dir)])
             metadata = skills["test-design-orchestrator"]["metadata"]
 
             self.assertEqual(metadata["category"], "testing")

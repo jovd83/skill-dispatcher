@@ -58,12 +58,39 @@ def render_skill_link(skill_name):
     return f'<span class="clickable skill-link" onclick="showDetail({safe_js_arg})">{safe_label}</span>'
 
 
-def render_skill_count_row(rank, skill_name, count):
-    """Render a leaderboard row for a skill and its total hit count."""
+def render_skill_count_row(rank, skill_name, count, failure_stats=None):
+    """Render a leaderboard row for a skill, its hit count, and optional failure rate.
+
+    failure_stats: dict mapping skill_name -> (failures, completions). When provided
+    and the skill has at least one phase_status event, a failure-rate badge is shown.
+    """
+    rate_html = ""
+    if failure_stats and skill_name in failure_stats:
+        fails, total = failure_stats[skill_name]
+        if total > 0:
+            pct = (fails / total) * 100
+            tone = "tone-muted" if fails == 0 else ("tone-gold" if pct < 25 else "tone-red")
+            rate_html = (
+                f' <span class="failure-rate {tone}" '
+                f'title="{fails} of {total} phase-completions failed">'
+                f'{pct:.0f}% fail</span>'
+            )
     return (
         '<div class="rank-row all-skill-row">'
         f'<span class="rank-index">{rank}</span>'
-        f'<span class="all-skill-name">{render_skill_link(skill_name)}</span>'
+        f'<span class="all-skill-name">{render_skill_link(skill_name)}{rate_html}</span>'
+        f'<strong>{count}</strong>'
+        '</div>'
+    )
+
+
+def render_model_count_row(rank, model_name, count):
+    """Render a leaderboard-style row for a model and its total hit count."""
+    badge = render_model_badge({"model": model_name})
+    return (
+        '<div class="rank-row all-skill-row">'
+        f'<span class="rank-index">{rank}</span>'
+        f'<span class="all-skill-name">{badge}</span>'
         f'<strong>{count}</strong>'
         '</div>'
     )
@@ -219,6 +246,268 @@ def render_recent_activity(event):
     )
 
 
+def token_cost_report_roots(script_dir):
+    """
+    Resolve the ordered list of candidate roots that may contain token cost
+    reports.
+
+    Override via the `TOKEN_COST_REPORTS_DIR` environment variable
+    (use `os.pathsep` to pass several paths). When the env var is set,
+    only those paths are used. Otherwise, well-known defaults are tried in
+    order. Non-existent paths are filtered out by `collect_token_cost_reports`.
+    """
+    override = os.environ.get("TOKEN_COST_REPORTS_DIR", "").strip()
+    if override:
+        return [Path(p).expanduser() for p in override.split(os.pathsep) if p.strip()]
+
+    home = Path.home()
+    return [
+        # Sibling skill in this repo (current default)
+        script_dir.parent / "token_count_skill" / "repository-reports",
+        # token-usage-cost-report skill installed for the user
+        home / ".claude" / "skills" / "token-usage-cost-report" / "repository-reports",
+        home / ".agents" / "skills" / "token-usage-cost-report" / "repository-reports",
+        # Sibling skill installs that match the canonical name
+        script_dir.parent / "token-usage-cost-report" / "repository-reports",
+    ]
+
+
+def collect_token_cost_reports(script_dir):
+    """
+    Discover token cost reports produced by the token-usage-cost-report skill.
+    Walks each candidate root from `token_cost_report_roots()` and reads
+    `<root>/<repo>/report.data.json` for `summary.cost_total_usd`.
+    Dedupes by repo name (first matching root wins).
+
+    Returns (items, roots_searched) where:
+      - items: list of {name, cost_usd, href, source_root} sorted by cost desc
+      - roots_searched: list of {path, exists} for diagnostics
+    """
+    roots = token_cost_report_roots(script_dir)
+    roots_searched = [{"path": str(r), "exists": r.exists()} for r in roots]
+
+    items = []
+    seen_names = set()
+    for root in roots:
+        if not root.exists():
+            continue
+        for entry in sorted(root.iterdir()):
+            if not entry.is_dir() or entry.name in seen_names:
+                continue
+            data_file = entry / "report.data.json"
+            html_file = entry / "report.html"
+            if not data_file.exists():
+                continue
+            try:
+                with open(data_file, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+            except Exception:
+                continue
+            cost = payload.get("summary", {}).get("cost_total_usd")
+            if cost is None:
+                continue
+            try:
+                cost_float = float(cost)
+            except (TypeError, ValueError):
+                continue
+            seen_names.add(entry.name)
+            items.append({
+                "name": entry.name,
+                "cost_usd": cost_float,
+                "href": html_file.resolve().as_uri() if html_file.exists() else None,
+                "source_root": str(root),
+            })
+    items.sort(key=lambda x: x["cost_usd"], reverse=True)
+    return items, roots_searched
+
+
+def render_token_cost_table(items, roots_searched=None):
+    """Render the token cost reports list as a card-styled table."""
+    roots_searched = roots_searched or []
+    active_sources = {item["source_root"] for item in items}
+    show_source_col = len(active_sources) > 1
+
+    if not items:
+        roots_html = "".join(
+            f'<li><code>{html.escape(r["path"])}</code>'
+            f' <span class="tone-muted">({"exists, no reports" if r["exists"] else "missing"})</span></li>'
+            for r in roots_searched
+        )
+        env_hint = (
+            '<p style="margin-top:16px"><strong>Tip:</strong> set '
+            '<code>TOKEN_COST_REPORTS_DIR</code> '
+            '(use <code>;</code> on Windows or <code>:</code> on POSIX to pass several paths) '
+            'to point at a custom location.</p>'
+        )
+        return (
+            '<div class="card" style="max-width: 900px; margin: 0 auto; padding: 32px;">'
+            '<i>No token cost reports found.</i>'
+            f'<p style="margin-top:16px">Roots searched:</p><ul>{roots_html}</ul>'
+            f'{env_hint}'
+            '</div>'
+        )
+    rows = []
+    total = 0.0
+    for item in items:
+        name = html.escape(item["name"])
+        cost_label = f'${item["cost_usd"]:.4f}'
+        if item["href"]:
+            href = html.escape(item["href"], quote=True)
+            action = (
+                f'<a href="{href}" class="btn btn-secondary" '
+                f'target="_blank" rel="noopener noreferrer">Open Report</a>'
+            )
+        else:
+            action = '<span class="tone-muted">No HTML</span>'
+        source_cell = ""
+        if show_source_col:
+            source_cell = (
+                f'<td class="tone-muted" style="font-size:0.82rem">'
+                f'<code>{html.escape(item.get("source_root", ""))}</code></td>'
+            )
+        rows.append(
+            '<tr>'
+            f'<td>{name}</td>'
+            f'<td style="text-align:right;font-variant-numeric:tabular-nums">{cost_label}</td>'
+            f'{source_cell}'
+            f'<td style="text-align:right">{action}</td>'
+            '</tr>'
+        )
+        total += item["cost_usd"]
+
+    source_header = '<th>Source</th>' if show_source_col else ''
+    source_footer = '<td></td>' if show_source_col else ''
+    return (
+        '<div class="table-container" style="max-width: 1100px; margin: 0 auto;">'
+        '<table>'
+        '<thead><tr>'
+        '<th>Repository</th>'
+        '<th style="text-align:right">Total Cost (USD)</th>'
+        f'{source_header}'
+        '<th style="text-align:right">Action</th>'
+        '</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '<tfoot><tr>'
+        f'<td><strong>Total ({len(items)} reports)</strong></td>'
+        f'<td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${total:.4f}</strong></td>'
+        f'{source_footer}'
+        '<td></td>'
+        '</tr></tfoot>'
+        '</table>'
+        '</div>'
+    )
+
+
+def _parse_iso(timestamp: str):
+    """Parse an event timestamp; return None on failure."""
+    if not isinstance(timestamp, str) or not timestamp:
+        return None
+    try:
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def compute_chains(events, max_chains: int = 20):
+    """Group events by chain_id; return chain summaries sorted newest-first.
+
+    Each chain summary is a dict:
+        {
+            "chain_id": str,
+            "started": iso str of first event,
+            "duration_sec": float (0 if only one event),
+            "phases": [(timestamp, decision, skill, intent, dt_from_start_sec), ...],
+        }
+
+    Events without a chain_id are ignored.
+    """
+    by_chain = {}
+    for ev in events:
+        cid = ev.get("chain_id")
+        if not cid or not isinstance(cid, str):
+            continue
+        by_chain.setdefault(cid, []).append(ev)
+
+    chains = []
+    for cid, chain_events in by_chain.items():
+        chain_events.sort(key=lambda e: e.get("timestamp", ""))
+        first_ts = chain_events[0].get("timestamp", "")
+        last_ts = chain_events[-1].get("timestamp", first_ts)
+        first_dt = _parse_iso(first_ts)
+        last_dt = _parse_iso(last_ts)
+        duration_sec = (last_dt - first_dt).total_seconds() if (first_dt and last_dt) else 0.0
+
+        phases = []
+        for ev in chain_events:
+            ev_dt = _parse_iso(ev.get("timestamp", ""))
+            dt_from_start = (ev_dt - first_dt).total_seconds() if (ev_dt and first_dt) else 0.0
+            phases.append((
+                ev.get("timestamp", ""),
+                ev.get("decision", "HANDOFF"),
+                ev.get("selected_skill", "?"),
+                ev.get("intent", ""),
+                dt_from_start,
+            ))
+
+        chains.append({
+            "chain_id": cid,
+            "started": first_ts,
+            "duration_sec": duration_sec,
+            "phases": phases,
+        })
+
+    chains.sort(key=lambda c: c["started"], reverse=True)
+    return chains[:max_chains]
+
+
+def render_chains_section(events) -> str:
+    """Render the Recent Chains card. Returns empty string if no chains exist."""
+    chains = compute_chains(events)
+    if not chains:
+        return ""
+
+    rows = []
+    for chain in chains:
+        cid = html.escape(chain["chain_id"])
+        started = html.escape(chain["started"][:19])  # trim to seconds
+        total_dur = chain["duration_sec"]
+        total_dur_label = f"{total_dur:.2f}s" if total_dur > 0 else "—"
+        phase_count = len(chain["phases"])
+
+        phase_pills = []
+        for ts, decision, skill, intent, dt in chain["phases"]:
+            decision_safe = html.escape(decision)
+            skill_safe = html.escape(skill)
+            intent_safe = html.escape(intent[:50], quote=True)
+            dt_label = f"+{dt:.2f}s"
+            phase_pills.append(
+                f'<span class="chain-phase" title="{intent_safe}">'
+                f'<span class="chain-decision">{decision_safe}</span>'
+                f' <span class="chain-skill">{skill_safe}</span>'
+                f' <span class="chain-dt">{dt_label}</span>'
+                f'</span>'
+            )
+
+        rows.append(
+            f'<div class="chain-row">'
+            f'<div class="chain-meta">'
+            f'<span class="chain-id" title="{cid}">{cid[:8]}</span>'
+            f'<span class="chain-started">{started}</span>'
+            f'<span class="chain-duration">total: {total_dur_label}</span>'
+            f'<span class="chain-phase-count">{phase_count} phase{"s" if phase_count != 1 else ""}</span>'
+            f'</div>'
+            f'<div class="chain-phases">{"".join(phase_pills)}</div>'
+            f'</div>'
+        )
+
+    return (
+        '<div class="card chains-card">'
+        '<div class="section-kicker">Recent Chains (orchestrator runs grouped by chain_id)</div>'
+        + "".join(rows)
+        + '</div>'
+    )
+
+
 def main():
     script_dir = Path(__file__).parent.parent
     # SAFE ZONE Discovery & Smart Migration
@@ -286,13 +575,15 @@ def main():
 
     # Explode sequences for accurate skill usage counts
     skills_counter = Counter()
+    models_counter = Counter()
     for ev in events:
         event_skills = extract_logged_skills(ev)
         total_calls += len(event_skills)
         for skill in event_skills:
             if skill:
                 skills_counter[skill] += 1
-                
+        models_counter[extract_model_name(ev)] += 1
+
     most_used = skills_counter.most_common(1)[0] if skills_counter else ("None", 0)
     unique_skills = len(skills_counter)
     
@@ -316,12 +607,18 @@ def main():
         md_content = staleness_report_path.read_text(encoding="utf-8")
         staleness_html = markdown_to_html(md_content)
 
+    # Load Token Cost Reports
+    token_cost_items, token_cost_roots = collect_token_cost_reports(script_dir)
+    token_cost_html = render_token_cost_table(token_cost_items, token_cost_roots)
+
     # Decision analytics
     decision_counter = Counter(ev.get("decision", "HANDOFF") for ev in events)
     decision_summary = {
         "H": decision_counter.get("HANDOFF", 0),
         "S": decision_counter.get("SEQUENCE", 0),
-        "N": decision_counter.get("NO_MATCH", 0)
+        "N": decision_counter.get("NO_MATCH", 0),
+        "C": decision_counter.get("CONTEXT_LOAD", 0),
+        "P": decision_counter.get("POLICY_CONSULT", 0),
     }
     policy_counter = Counter(
         ev.get("policy_lookup", {}).get("status", "none")
@@ -335,6 +632,23 @@ def main():
         "E": policy_counter.get("error", 0),
     }
 
+    # Chain analytics (orchestrator runs grouped by chain_id)
+    chains_html = render_chains_section(events)
+
+    # Per-skill failure stats: count phase_status occurrences per selected_skill.
+    # Skills with no phase_status events at all simply don't display a rate.
+    failure_stats: dict[str, list[int]] = {}
+    for ev in events:
+        status = ev.get("phase_status")
+        skill = ev.get("selected_skill")
+        if not status or not isinstance(skill, str):
+            continue
+        bucket = failure_stats.setdefault(skill, [0, 0])  # [fails, total]
+        bucket[1] += 1
+        if status == "failed":
+            bucket[0] += 1
+    failure_stats_dict = {k: (v[0], v[1]) for k, v in failure_stats.items()}
+
     # HTML Generation
     html_content = render_html(
         total_calls=total_calls,
@@ -346,13 +660,18 @@ def main():
         recent_events=recent,
         skills_summary=skills_counter.most_common(10),
         all_skills_summary=skills_counter.most_common(),
+        models_summary=models_counter.most_common(),
         consulted_at=consulted_at,
         latest_event_at=events[-1].get("timestamp", consulted_at),
         treemap_json=json.dumps(treemap_data),
         all_events_json=json.dumps(events),
         registry_json=json.dumps(registry_index),
         environment_info=environment_info,
-        staleness_html=staleness_html
+        staleness_html=staleness_html,
+        chains_html=chains_html,
+        failure_stats_dict=failure_stats_dict,
+        token_cost_html=token_cost_html,
+        token_cost_count=len(token_cost_items)
     )
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -421,11 +740,28 @@ def markdown_to_html(md: str) -> str:
         
     return "\n".join(html)
 
-def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, policy_summary, recent_events, skills_summary, all_skills_summary, consulted_at, latest_event_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html):
+def render_html(total_calls, most_used_name, most_used_count, unique_skills, decision_summary, policy_summary, recent_events, skills_summary, all_skills_summary, consulted_at, latest_event_at, treemap_json, all_events_json, registry_json, environment_info, staleness_html, chains_html="", token_cost_html=None, token_cost_count=0, models_summary=None, failure_stats_dict=None):
     leaderboard_html = "".join([
         render_skill_count_row(rank, name, count)
         for rank, (name, count) in enumerate(skills_summary, start=1)
     ])
+
+    if models_summary:
+        model_hits_rows = "".join(
+            render_model_count_row(rank, name, count)
+            for rank, (name, count) in enumerate(models_summary, start=1)
+        )
+    else:
+        model_hits_rows = '<div class="muted-cell" style="padding: 12px 0;">No model telemetry yet.</div>'
+    model_hits_html = (
+        '<div class="card">'
+        '<div class="section-kicker">Distribution</div>'
+        '<div class="section-heading-row">'
+        '<h2>Hits per Model</h2>'
+        '</div>'
+        f'{model_hits_rows}'
+        '</div>'
+    )
 
     timeline_html = (
         '<div class="table-container recent-activity-shell">'
@@ -450,7 +786,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         '<div class="card all-skills-card">'
         '<div class="section-kicker">Complete Leaderboard</div>'
         + "".join(
-            render_skill_count_row(rank, name, count)
+            render_skill_count_row(rank, name, count, failure_stats=failure_stats_dict)
             for rank, (name, count) in enumerate(all_skills_summary, start=1)
         )
         + '</div>'
@@ -458,11 +794,16 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
     decision_markup = (
         f'<div class="stat-value stat-composite">'
-        f'<span class="tone-olive">{decision_summary["H"]}</span>'
+        f'<span class="tone-olive" title="HANDOFF">{decision_summary["H"]}</span>'
         f'<span class="divider">/</span>'
-        f'<span class="tone-gold">{decision_summary["S"]}</span>'
+        f'<span class="tone-gold" title="SEQUENCE">{decision_summary["S"]}</span>'
         f'<span class="divider">/</span>'
-        f'<span class="tone-muted">{decision_summary["N"]}</span>'
+        f'<span class="tone-muted" title="NO_MATCH">{decision_summary["N"]}</span>'
+        f'</div>'
+        f'<div class="stat-composite stat-sub-row">'
+        f'<span style="color:var(--accent)" title="CONTEXT_LOAD">&#128218; {decision_summary.get("C", 0)}</span>'
+        f'<span class="divider"> / </span>'
+        f'<span style="color:var(--accent-soft, #9b6)" title="POLICY_CONSULT">&#128203; {decision_summary.get("P", 0)}</span>'
         f'</div>'
     )
 
@@ -483,6 +824,28 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="refresh" content="30">
     <title>Skill Dispatcher Wallboard & Radiator</title>
+    <script>
+        // Restore view from URL before first paint to prevent flash of default dashboard
+        // when the meta refresh reloads the page on a sub-view.
+        (function () {{
+            try {{
+                if ('scrollRestoration' in history) history.scrollRestoration = 'auto';
+                var view = new URLSearchParams(location.search).get('view');
+                var map = {{
+                    'wallboard': 'radiator-mode',
+                    'detail': 'detail-mode',
+                    'all-activity': 'all-activity-mode',
+                    'staleness': 'staleness-mode',
+                    'token-cost': 'token-cost-mode'
+                }};
+                if (map[view]) document.documentElement.dataset.initialView = map[view];
+            }} catch (e) {{ /* ignore */ }}
+        }})();
+    </script>
+    <style>
+        html[data-initial-view] {{ visibility: hidden; }}
+        html.view-ready {{ visibility: visible; }}
+    </style>
     <style>
         :root {{
             --bg: #efe4d1;
@@ -815,6 +1178,13 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             white-space: nowrap;
         }}
 
+        .stat-sub-row {{
+            font-size: 1rem;
+            gap: 0.3em;
+            margin-top: 4px;
+            opacity: 0.85;
+        }}
+
         .divider {{
             color: rgba(117, 104, 88, 0.6);
             margin: 0 0.02em;
@@ -848,7 +1218,14 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .main-content {{
             display: grid;
             grid-template-columns: minmax(250px, 0.72fr) minmax(0, 1.75fr);
-            gap: 18px;
+            row-gap: 26px;
+            column-gap: 18px;
+            align-items: start;
+        }}
+
+        .main-content > .recent-activity-card {{
+            grid-column: 2;
+            grid-row: 1 / span 2;
         }}
 
         h2 {{
@@ -947,6 +1324,66 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             border-radius: 18px;
             border: 1px solid rgba(120, 89, 53, 0.1);
         }}
+
+        .chains-card {{ margin-top: 18px; }}
+        .chain-row {{
+            border: 1px solid rgba(120, 89, 53, 0.12);
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            background: rgba(255, 255, 255, 0.5);
+        }}
+        .chain-meta {{
+            display: flex;
+            gap: 18px;
+            align-items: center;
+            font-size: 0.82rem;
+            color: #6d4c41;
+            margin-bottom: 6px;
+        }}
+        .chain-id {{
+            font-family: 'Consolas','Menlo',monospace;
+            font-weight: 700;
+            color: #1565c0;
+            background: rgba(33, 150, 243, 0.08);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }}
+        .chain-started {{ color: #888; font-size: 0.78rem; }}
+        .chain-duration {{ color: #2e7d32; font-weight: 600; }}
+        .chain-phase-count {{ color: #999; font-size: 0.78rem; }}
+        .chain-phases {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }}
+        .chain-phase {{
+            display: inline-flex;
+            gap: 6px;
+            align-items: baseline;
+            background: rgba(247, 245, 240, 0.9);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            border: 1px solid rgba(120, 89, 53, 0.08);
+        }}
+        .chain-decision {{ font-weight: 700; color: #0d47a1; font-size: 0.7rem; letter-spacing: 0.04em; }}
+        .chain-skill {{ color: #4a148c; font-weight: 600; }}
+        .chain-dt {{ color: #2e7d32; font-family: 'Consolas','Menlo',monospace; font-size: 0.72rem; }}
+
+        .failure-rate {{
+            display: inline-block;
+            margin-left: 8px;
+            padding: 1px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            background: rgba(0, 0, 0, 0.04);
+        }}
+        .failure-rate.tone-red {{ background: rgba(216, 27, 96, 0.12); color: #b71c1c; }}
+        .failure-rate.tone-gold {{ background: rgba(249, 168, 37, 0.14); color: #6d4c41; }}
+        .failure-rate.tone-muted {{ background: rgba(46, 125, 50, 0.10); color: #2e7d32; }}
 
         .recent-activity-table th:nth-child(1) {{ width: 132px; }}
         .recent-activity-table th:nth-child(2) {{ width: 64px; text-align: center; }}
@@ -1172,7 +1609,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         .detail-shell,
         .all-activity-shell,
-        .staleness-shell {{
+        .staleness-shell,
+        .token-cost-shell {{
             display: none;
             position: fixed;
             inset: 0;
@@ -1190,6 +1628,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         body.all-activity-mode .all-activity-shell {{ display: block; }}
         body.staleness-mode .container, body.staleness-mode .wall-shell {{ display: none; }}
         body.staleness-mode .staleness-shell {{ display: block; }}
+        body.token-cost-mode .container, body.token-cost-mode .wall-shell {{ display: none; }}
+        body.token-cost-mode .token-cost-shell {{ display: block; }}
 
         .detail-header {{
             display: flex;
@@ -1310,6 +1750,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 <div class="nav-actions">
                     <a href="?view=wallboard" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Show Wallboard</a>
                     <a href="?view=staleness" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Show staleness report</a>
+                    <a href="?view=token-cost" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Show token cost report ({token_cost_count})</a>
                 </div>
                 <div class="integrity-card">
                     <span class="integrity-label">System Integrity</span>
@@ -1367,11 +1808,13 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                     <div style="font-weight: 700; font-size: 1rem;">{environment_info}</div>
                 </div>
             </div>
-            <div class="card">
+            <div class="card recent-activity-card">
                 <div class="section-kicker">Timeline</div>
                 <h2>Recent Activity</h2>
                 {timeline_html}
             </div>
+            {model_hits_html}
+            {chains_html}
         </section>
     </div>
 
@@ -1434,11 +1877,30 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             </div>
             <button class="btn" onclick="goHome()">Back to Overview</button>
         </div>
-        
+
         <div class="card" style="max-width: 900px; margin: 0 auto; padding: 40px;">
             <div id="staleness-content">
                 {staleness_html}
             </div>
+        </div>
+    </div>
+
+    <!-- Token Cost Reports View -->
+    <div class="token-cost-shell" id="token-cost-view">
+        <div class="detail-header">
+            <div>
+                <span class="stat-label">Token Usage Cost Report</span>
+                <h1>Token Cost Reports</h1>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <a href="?view=dashboard" class="btn btn-secondary">Back to Overview</a>
+                <a href="?view=staleness" class="btn btn-secondary">Staleness</a>
+                <a href="?view=wallboard" class="btn btn-secondary">Wallboard</a>
+            </div>
+        </div>
+
+        <div id="token-cost-content">
+            {token_cost_html}
         </div>
     </div>
 
@@ -1494,8 +1956,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             else url.searchParams.delete('skill');
             window.history.replaceState({{}}, '', url);
             
-            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'staleness-mode');
-            
+            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'staleness-mode', 'token-cost-mode');
+
             if (view === 'wallboard') {{
                 document.getElementById('body').classList.add('radiator-mode');
                 renderTreemap();
@@ -1506,6 +1968,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 document.getElementById('body').classList.add('all-activity-mode');
             }} else if (view === 'staleness') {{
                 document.getElementById('body').classList.add('staleness-mode');
+            }} else if (view === 'token-cost') {{
+                document.getElementById('body').classList.add('token-cost-mode');
             }}
         }}
 
@@ -1767,13 +2231,13 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             }}
         }});
 
-        // Handle URL parameters for direct deep-linking
-        window.addEventListener('load', () => {{
+        // Restore view from URL as early as possible so meta-refresh reloads
+        // don't flash the default dashboard before snapping to the active sub-view.
+        function restoreViewFromUrl() {{
             const params = new URLSearchParams(window.location.search);
             const view = params.get('view');
             const skill = params.get('skill');
-            updateSnapshotBanner();
-            
+
             if (view === 'wallboard') {{
                 setView('wallboard');
             }} else if (view === 'detail' && skill) {{
@@ -1782,8 +2246,20 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 setView('all-activity');
             }} else if (view === 'staleness') {{
                 setView('staleness');
+            }} else if (view === 'token-cost') {{
+                setView('token-cost');
             }}
-        }});
+            updateSnapshotBanner();
+            document.documentElement.classList.add('view-ready');
+        }}
+
+        if (document.readyState === 'loading') {{
+            document.addEventListener('DOMContentLoaded', restoreViewFromUrl);
+        }} else {{
+            restoreViewFromUrl();
+        }}
+        // Safety net: ensure the page is never left hidden if something throws.
+        setTimeout(() => document.documentElement.classList.add('view-ready'), 1500);
 
         // Intercept clicks to stay in the same window
         document.addEventListener('click', e => {{

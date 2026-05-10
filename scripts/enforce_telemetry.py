@@ -1,7 +1,25 @@
 #!/usr/bin/env python3
 """Enforce Telemetry - Audits and patches Skill files to ensure dispatcher logging compliance.
 Now with de-duplication and pattern normalization.
+
+DEPRECATED: Use skill_md_telemetry_notice.py instead.
+  skill_md_telemetry_notice.py is a strict superset of this script:
+  - Same telemetry paragraph add/remove behaviour
+  - Also patches missing dispatcher-* frontmatter tags (--patch-missing-tags)
+  - Supports --target for non-default skill roots
+
+Migration:
+  enforce_telemetry.py --patch          ->  skill_md_telemetry_notice.py --add-paragraph --write
+  enforce_telemetry.py --patch --target ->  skill_md_telemetry_notice.py --add-paragraph --target <path> --write
+
+This file is kept for backwards compatibility and will be removed in a future release.
 """
+import warnings
+warnings.warn(
+    "enforce_telemetry.py is deprecated. Use skill_md_telemetry_notice.py instead.",
+    DeprecationWarning,
+    stacklevel=1,
+)
 
 import os
 import argparse
@@ -13,7 +31,7 @@ LOGGING_SNIPPET = """
 ## Telemetry & Logging
 > [!IMPORTANT]
 > All usage of this skill must be logged via the Skill Dispatcher to ensure audit logs and wallboard analytics are accurate:
-> `./log-dispatch.cmd --skill <skill_name> --intent <intent> --reason <reason>` (or `./log-dispatch.sh` on Linux)
+> `./log-dispatch.cmd --skill <skill_name> --intent <intent> --model <model_name> --reason <reason>` (or `./log-dispatch.sh` on Linux)
 """
 
 # Regex to find existing telemetry sections (to remove/replace them)

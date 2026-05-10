@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -108,6 +110,46 @@ def build_bootstrap_payload(
     }
 
 
+def _log_policy_consult(payload: Dict[str, Any], skill_dispatcher_dir: Path) -> None:
+    """Emit a POLICY_CONSULT event to the dispatcher log via dispatch_logger.py.
+
+    Called automatically at the end of main() unless --no-log is passed.
+    Failures are silently ignored so bootstrap stays non-blocking.
+    """
+    logger = skill_dispatcher_dir / "scripts" / "dispatch_logger.py"
+    if not logger.exists():
+        return
+
+    lf = payload.get("logger_fields", {})
+    status = lf.get("policy_status", "miss")
+    source = lf.get("policy_source", "none")
+    hit_count = str(lf.get("policy_hit_count", 0))
+    topic = payload.get("topic", "RoutingPolicies")
+
+    cmd = [
+        sys.executable,
+        str(logger),
+        "--skill", "skill-dispatcher",
+        "--intent", "bootstrap_policy_lookup",
+        "--decision", "POLICY_CONSULT",
+        "--reason", f"bootstrap: {topic} ({status} from {source})",
+        "--policy-status", status,
+        "--policy-source", source,
+        "--policy-hit-count", hit_count,
+        "--policy-topic", topic,
+    ]
+    try:
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            env={**os.environ, "SKILL_DISPATCH_DISABLE_WALLBOARD": "1"},
+        )
+    except Exception:
+        pass
+
+
 def write_cache(payload: Dict[str, Any]) -> None:
     json_path = Path(payload["cache_files"]["json"])
     markdown_path = Path(payload["cache_files"]["markdown"])
@@ -153,6 +195,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="json",
         help="Choose stdout format. JSON is the default.",
     )
+    parser.add_argument(
+        "--no-log",
+        action="store_true",
+        help="Skip emitting the automatic POLICY_CONSULT telemetry event.",
+    )
     return parser
 
 
@@ -181,6 +228,9 @@ def main() -> int:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
         print(payload["bootstrap_note"], end="")
+
+    if not args.no_log:
+        _log_policy_consult(payload, skill_dispatcher_dir)
 
     return 0 if payload["policy_lookup"]["status"] != "error" else 1
 

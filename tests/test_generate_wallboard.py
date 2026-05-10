@@ -5,6 +5,7 @@ from scripts.generate_wallboard import (
     infer_model_vendor,
     render_html,
     render_model_badge,
+    render_model_count_row,
     render_recent_activity,
     simple_icon_url,
 )
@@ -83,6 +84,41 @@ class GenerateWallboardTests(unittest.TestCase):
         self.assertIn("playwright-skill", html)
         self.assertIn("<strong>2</strong>", html)
         self.assertIn("<strong>1</strong>", html)
+
+    def test_model_count_row_renders_badge_and_count(self):
+        row = render_model_count_row(1, "claude-sonnet-4-6", 7)
+
+        self.assertIn('class="rank-index">1<', row)
+        self.assertIn("model-badge vendor-anthropic", row)
+        self.assertIn("claude-sonnet-4-6", row)
+        self.assertIn("<strong>7</strong>", row)
+
+    def test_render_html_includes_hits_per_model_card(self):
+        html = render_html(
+            total_calls=3,
+            most_used_name="analysis-skill",
+            most_used_count=2,
+            unique_skills=1,
+            decision_summary={"H": 1, "S": 0, "N": 0},
+            policy_summary={"lookups": 0, "H": 0, "M": 0, "E": 0},
+            recent_events=[],
+            skills_summary=[("analysis-skill", 2)],
+            all_skills_summary=[("analysis-skill", 2)],
+            consulted_at="2026-04-28T12:00:00Z",
+            latest_event_at="2026-04-28T12:00:00Z",
+            treemap_json="[]",
+            all_events_json="[]",
+            registry_json="{}",
+            environment_info="demo / user",
+            staleness_html="",
+            models_summary=[("claude-sonnet-4-6", 5), ("Unknown model", 2)],
+        )
+
+        self.assertIn("Hits per Model", html)
+        self.assertIn("claude-sonnet-4-6", html)
+        self.assertIn("Unknown model", html)
+        self.assertIn("<strong>5</strong>", html)
+        self.assertIn("<strong>2</strong>", html)
 
 
 if __name__ == "__main__":

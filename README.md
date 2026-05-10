@@ -24,6 +24,16 @@ The **Skill Dispatcher** solves this by acting as a strategic traffic controller
 4.  **Workflow Orchestration**: Automatically decides between `HANDOFF`, `SEQUENCE` (multi-phase flow), or `NO_MATCH`.
 5.  **Shared Memory Integration**: Loads project-local routing memory first, then shared-memory defaults with confidence and freshness gates, and supports promoting stable routing policies to `shared-memory` for global consistency.
 
+## Chain Automation (latest)
+
+The dispatcher now detects and proposes chain definitions automatically:
+
+- **Chain candidate detection** (`build_registry.py`): skills with `risk: high` and multi-phase workflow descriptions are flagged as `missing_chain_definition` in `registry_health.json` during every `--preflight` run.
+- **`propose_chains.py`** (new): reads flagged candidates, calls the Anthropic API (using `SKILL_DISPATCH_MODEL` / `AGENT_MODEL` from the calling agent's environment), and writes draft `chain_definition.json` files to `~/.agents/dispatcher-data/chain_proposals/<skill>/`. Each draft ships with a `REVIEW.md` checklist and the exact `cp` command to approve and promote it. Auto-spawned non-blocking after every registry rebuild when candidates exist.
+- **`dispatch_logger.py`**: `chain_id` is now auto-generated (UUID) when `--chain-id` is not passed, so every event has a correlation ID. `policy_lookup.applied` now emits `null` (unknown) instead of `false` when using auto-lookup — distinguishes "we don't know" from "definitely not applied".
+- **`executable_skills.json`**: 7 new skills added (`retro-board-creator`, `shownote-creator`, `claymotion-*`, `sketchy-slides`, `here-now`, `imagegen`); 3 name-drift entries corrected (`react:components` → `react-components`, `functional-analysis-meta-skill` → `FunctionalAnalysisMetaSkill-skill`, `testing-meta-skill` → `TestingMetaSkill-skill`).
+- **Name-drift preflight check** (`build_registry.py`): flags skills where the SKILL.md `name:` field doesn't match the install directory name, preventing silent routing failures.
+
 ## New Capabilities In This Sync
 
 This source repository now contains a stronger policy-aware routing layer so agents no longer need to "remember" that memory exists as a separate concern:

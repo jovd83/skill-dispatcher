@@ -1,8 +1,37 @@
+import argparse
+import subprocess
 import datetime
 import json
 import os
 import sys
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Optional: import normalize() from skill-yaml-cleanup if available.
+# build_registry uses it for --preflight in-memory normalization.
+# Falls back to a no-op so the registry can still be built without the
+# cleanup skill installed.
+# ---------------------------------------------------------------------------
+def _try_import_normalize():
+    """Return the normalize() callable from _common, or None if unavailable."""
+    # Common locations relative to this script's parent (skill-dispatcher root)
+    skill_root = Path(__file__).parent.parent
+    candidates = [
+        skill_root.parent / "Skill-yaml-cleanup" / "scripts",
+        skill_root.parent / "skill-yaml-cleanup" / "scripts",
+        Path.home() / ".agents" / "skills" / "skill-yaml-cleanup" / "scripts",
+        Path.home() / ".agents" / "skills" / "Skill-yaml-cleanup" / "scripts",
+    ]
+    for candidate in candidates:
+        if (candidate / "_common.py").exists():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            try:
+                from _common import normalize  # noqa: PLC0415
+                return normalize
+            except ImportError:
+                pass
+    return None
 
 
 LIST_FIELDS = {
@@ -30,6 +59,7 @@ DISPATCHER_METADATA_KEYS = {
     "layer": "dispatcher-layer",
     "lifecycle": "dispatcher-lifecycle",
     "downstream_skills": "dispatcher-downstream-skills",
+    "preferred_model": "dispatcher-preferred-model",
 }
 
 ENRICHMENT_FIELDS = [
@@ -406,9 +436,90 @@ def build_indexes(skills):
     return capability_index, intent_index
 
 
-def find_skills(scan_dirs):
-    """Discover and normalize skills from the provided directories."""
+def diff_registries(prev_payload: dict, new_payload: dict) -> dict:
+    """Compute additions, removals, and metadata changes between two registries.
+
+    Both payloads are full SKILL_REGISTRY.json dicts. Skills can live as either
+    a list under `skills` or a dict — this handles both shapes.
+    Returns a dict suitable for one JSONL row of registry_history.jsonl.
+    """
+    def _extract(payload):
+        raw = (payload or {}).get("skills", {})
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, list):
+            return {item.get("name"): item for item in raw if isinstance(item, dict) and item.get("name")}
+        return {}
+
+    prev = _extract(prev_payload)
+    new = _extract(new_payload)
+    prev_names = set(prev)
+    new_names = set(new)
+
+    added = sorted(new_names - prev_names)
+    removed = sorted(prev_names - new_names)
+
+    # Detect metadata-shape changes for skills present in both snapshots
+    tracked_fields = ("layer", "category", "risk", "lifecycle", "writes_files")
+    changed = {}
+    for name in sorted(prev_names & new_names):
+        before = prev.get(name, {})
+        after = new.get(name, {})
+        diffs = {}
+        for field in tracked_fields:
+            b = before.get(field)
+            a = after.get(field)
+            if b != a:
+                diffs[field] = {"from": b, "to": a}
+        if diffs:
+            changed[name] = diffs
+
+    return {
+        "prev_count": len(prev_names),
+        "new_count": len(new_names),
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+    }
+
+
+
+
+def _is_chain_candidate(folder: Path, content: str, metadata: dict) -> bool:
+    """Return True if this skill looks like a multi-phase chain with no chain_definition.json yet."""
+    if (folder / "config" / "chain_definition.json").exists():
+        return False
+    if metadata.get("risk", "") != "high":
+        return False
+    # Body is everything after the closing frontmatter delimiter
+    fm_end = content.find("\n---", 3)
+    body = content[fm_end:] if fm_end > 0 else content
+    body_lower = body.lower()
+    # Count how many phase/orchestration signals appear in the body
+    signals = [
+        "### ", "phase 0", "phase 1", "## workflow", "## phase",
+        "lifecycle", "orchestrat", "coordinates", "end-to-end", "sdlc",
+    ]
+    hits = sum(1 for s in signals if s in body_lower)
+    return hits >= 2
+
+def find_skills(scan_dirs, *, preflight_fn=None, strict=False):
+    """Discover and normalize skills from the provided directories.
+
+    Args:
+        scan_dirs: ordered list of directories to scan.
+        preflight_fn: optional callable(fm_text) -> (fm_text, report).
+            When provided, each SKILL.md's raw frontmatter is normalized
+            in memory before parsing.  Issues are logged and collected into
+            the returned health_report dict.
+        strict: if True, sys.exit(1) when any skill is oversized after
+            normalization.  Defaults to False (lenient — warns but continues).
+
+    Returns:
+        (skills dict, health_report dict)
+    """
     skills = {}
+    health_report = {}
     config_dir = Path(__file__).parent.parent / "config"
     enrichment_manifest = load_json_file(config_dir / "skill_enrichments.json")
     relationship_manifest = load_json_file(config_dir / "skill_relationships.json")
@@ -429,11 +540,52 @@ def find_skills(scan_dirs):
 
                 try:
                     content = skill_file.read_text(encoding="utf-8")
+
+                    # --- Preflight normalization (in-memory, never writes) ---
+                    if preflight_fn is not None:
+                        fm_start = content.find("\n", 3) + 1  # skip opening ---
+                        fm_end = content.find("\n---", fm_start)
+                        if fm_start > 0 and fm_end > fm_start:
+                            raw_fm = content[fm_start:fm_end]
+                            norm_fm, report = preflight_fn(raw_fm)
+                            skill_key = str(skill_file)
+                            issues = []
+                            if report.get("dedupe_removed", 0) > 0:
+                                issues.append(f"duplicate_metadata_blocks:{report['dedupe_removed']}_lines_removed")
+                            if report.get("flattened_fields"):
+                                issues.append(f"vertical_lists:{','.join(report['flattened_fields'])}")
+                            if report.get("noise_stripped"):
+                                issues.append(f"noise_fields:{','.join(report['noise_stripped'])}")
+                            if report.get("oversized"):
+                                issues.append(f"oversized:{report['char_count']}_chars")
+                                if strict:
+                                    print(f" [!] STRICT: {skill_file} frontmatter is {report['char_count']} chars (limit 1000). Aborting.")
+                                    sys.exit(1)
+                                else:
+                                    print(f" [!] Warning: {folder.name} frontmatter is {report['char_count']} chars (limit 1000).")
+                            if issues:
+                                health_report[skill_key] = {"skill": folder.name, "issues": issues, "char_count": report.get("char_count", 0)}
+                                print(f" [~] Preflight normalized {folder.name}: {'; '.join(issues)}")
+                            # Rebuild content with normalized frontmatter for parsing
+                            content = content[:fm_start] + norm_fm + content[fm_end:]
+                    # ---------------------------------------------------------
+
                     frontmatter = parse_frontmatter(content)
                     name = frontmatter.get("name") or folder.name
 
                     if name == "skill-dispatcher":
                         continue
+
+                    # Name-drift check: registry key (frontmatter name) must equal install directory name.
+                    # Drift causes silent failures when the orchestrator resolves SKILL.md paths by dir name.
+                    if frontmatter.get("name") and frontmatter.get("name") != folder.name:
+                        drift_msg = f"name_drift:{frontmatter['name']}!={folder.name}"
+                        print(f" [!] Name drift in {folder.name}: SKILL.md 'name: {frontmatter['name']}' != dir '{folder.name}'")
+                        skill_key = str(skill_file)
+                        if skill_key not in health_report:
+                            health_report[skill_key] = {"skill": folder.name, "issues": [], "char_count": 0}
+                        if drift_msg not in health_report[skill_key]["issues"]:
+                            health_report[skill_key]["issues"].append(drift_msg)
 
                     if not frontmatter.get("description"):
                         print(f" [!] Warning: Skill '{name}' in {folder.name} is missing a description.")
@@ -455,12 +607,23 @@ def find_skills(scan_dirs):
                         "path": str(folder.resolve()),
                         "source": str(directory.resolve()),
                     }
+                    # Chain-candidate detection: flag skills that look like multi-phase
+                    # orchestrators but have no chain_definition.json yet.
+                    if _is_chain_candidate(folder, content, metadata):
+                        skill_key = str(skill_file)
+                        if skill_key not in health_report:
+                            health_report[skill_key] = {"skill": folder.name, "issues": [], "char_count": 0}
+                        if "missing_chain_definition" not in health_report[skill_key]["issues"]:
+                            health_report[skill_key]["issues"].append("missing_chain_definition")
+                            print(f" [*] Chain candidate: {folder.name} (no chain_definition.json)")
+
+
                 except Exception as error:
                     print(f" [!] Error parsing skill in {folder}: {error}")
         except Exception as error:
             print(f" [!] Error accessing directory {directory}: {error}")
 
-    return skills
+    return skills, health_report
 
 
 def render_markdown_registry(skills, scan_dirs, generated_at, capability_index, intent_index):
@@ -560,6 +723,7 @@ def render_json_registry(skills, scan_dirs, generated_at, capability_index, inte
                 "downstream_skills": metadata.get("downstream_skills", []),
                 "writes_files": metadata.get("writes_files", False),
                 "manual_only": metadata.get("manual_only", False),
+                "preferred_model": metadata.get("preferred_model", ""),
                 "telemetry": "required",
                 "location": data["path"],
                 "source": data["source"],
@@ -589,24 +753,51 @@ def render_json_registry(skills, scan_dirs, generated_at, capability_index, inte
 
 
 def main():
+    parser = argparse.ArgumentParser(description="AgentSkill Registry Builder")
+    parser.add_argument(
+        "--preflight",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Normalize SKILL.md frontmatter in memory before parsing (default: on). "
+             "Requires skill-yaml-cleanup to be installed alongside this skill.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        default=False,
+        help="Fail with exit code 1 if any skill has oversized frontmatter after normalization.",
+    )
+    args = parser.parse_args()
+
     print("=== AgentSkill Registry Builder ===")
 
     current_script = Path(__file__).resolve()
     skill_root = current_script.parent.parent
-    
+
     # SAFE ZONE Priority: survive 'npx skills add' updates
     persistent_base = Path.home() / ".agents" / "dispatcher-data"
-    
+
     if ".agents" in str(skill_root.resolve()).lower():
         registry_dir = persistent_base / "registry"
     else:
         registry_dir = skill_root / "registry"
-        
+
     markdown_path = registry_dir / "SKILL_REGISTRY.md"
     json_path = registry_dir / "SKILL_REGISTRY.json"
+    health_path = registry_dir / "registry_health.json"
+    history_path = registry_dir / "registry_history.jsonl"
+
+    # Resolve preflight normalizer
+    preflight_fn = None
+    if args.preflight:
+        preflight_fn = _try_import_normalize()
+        if preflight_fn is None:
+            print("[~] Preflight: skill-yaml-cleanup not found — skipping in-memory normalization.")
+        else:
+            print("[*] Preflight: normalize() loaded from skill-yaml-cleanup.")
 
     scan_dirs = candidate_scan_dirs(skill_root)
-    skills = find_skills(scan_dirs)
+    skills, health_report = find_skills(scan_dirs, preflight_fn=preflight_fn, strict=args.strict)
     generated_at = datetime.datetime.now()
 
     if not skills:
@@ -638,10 +829,42 @@ def main():
 
     try:
         registry_dir.mkdir(parents=True, exist_ok=True)
+
+        # Read previous registry (before overwriting) so we can diff
+        prev_payload = load_json_file(json_path)
+
         markdown_path.write_text(markdown, encoding="utf-8")
         json_path.write_text(json.dumps(json_registry, indent=2) + "\n", encoding="utf-8")
+        health_payload = {
+            "generated_at": generated_at.isoformat(),
+            "preflight_enabled": preflight_fn is not None,
+            "skills_with_issues": len(health_report),
+            "issues": health_report,
+        }
+        health_path.write_text(json.dumps(health_payload, indent=2) + "\n", encoding="utf-8")
+
+        # Append a registry-history entry only when something actually changed.
+        if prev_payload:
+            diff = diff_registries(prev_payload, json_registry)
+            if diff["added"] or diff["removed"] or diff["changed"]:
+                history_entry = {
+                    "timestamp": generated_at.isoformat(),
+                    **diff,
+                }
+                with open(history_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(history_entry) + "\n")
+                summary = (
+                    f"+{len(diff['added'])} -{len(diff['removed'])} "
+                    f"~{len(diff['changed'])}"
+                )
+                print(f"[*] Registry diff written ({summary}): {history_path}")
+
         print(f"[*] Successfully built registry at: {markdown_path}")
         print(f"[*] Machine-readable registry written to: {json_path}")
+        if health_report:
+            print(f"[~] Registry health report ({len(health_report)} issues): {health_path}")
+        else:
+            print(f"[*] Registry health: all skills clean — {health_path}")
     except Exception as error:
         print(f"[!] Critical Error: Failed to write registry: {error}")
         sys.exit(1)
@@ -654,6 +877,23 @@ def main():
         enrich_star = f"(+{enrichment} tags inferred)" if enrichment > 0 else "(Manual)"
         print(f"[{category:^14}] {name:<35} {enrich_star}")
     print("--------------------------\n")
+
+    # Auto-spawn propose_chains.py for any new chain candidates (non-blocking).
+    candidates = [
+        v["skill"] for v in health_report.values()
+        if "missing_chain_definition" in v.get("issues", [])
+    ]
+    if candidates:
+        proposer = Path(__file__).parent / "propose_chains.py"
+        if proposer.exists():
+            print(f"[*] Spawning propose_chains.py for {len(candidates)} candidate(s): {candidates}")
+            subprocess.Popen(
+                [sys.executable, str(proposer)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            print(f"[~] Chain candidates found but propose_chains.py not installed: {candidates}")
 
 
 if __name__ == "__main__":

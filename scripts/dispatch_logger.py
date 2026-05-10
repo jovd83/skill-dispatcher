@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime
+import uuid
 from pathlib import Path
 
 
@@ -37,8 +38,8 @@ def build_auto_policy_lookup(
             "status": "error",
             "source": "none",
             "hit_count": 0,
-            "applied": False,
-            "changed_routing": False,
+            "applied": None,   # unknown — auto-lookup cannot determine if policy was followed
+            "changed_routing": None,
             "error": str(exc),
         }
 
@@ -60,6 +61,8 @@ def validate_logging_args(args, parser):
     parsed_skills = parse_skill_list(args.skills)
     if args.decision == "SEQUENCE" and not parsed_skills:
         parser.error("--skills is required when --decision SEQUENCE is used.")
+    if args.decision == "POLICY_CONSULT" and not args.policy_status:
+        parser.error("--policy-status is required when --decision POLICY_CONSULT is used.")
     return parsed_skills
 
 
@@ -115,7 +118,41 @@ def main():
     )
     parser.add_argument("--intent", required=True, help="The user's original intent.")
     parser.add_argument("--reason", required=True, help="The reason for this selection.")
-    parser.add_argument("--decision", default="HANDOFF", choices=["HANDOFF", "SEQUENCE", "NO_MATCH"], help="The type of matching decision made.")
+    parser.add_argument(
+        "--decision",
+        default="HANDOFF",
+        choices=["HANDOFF", "SEQUENCE", "NO_MATCH", "CONTEXT_LOAD", "POLICY_CONSULT"],
+        help="Dispatch decision type. CONTEXT_LOAD: a context skill was read. "
+             "POLICY_CONSULT: shared-memory policy was queried before routing.",
+    )
+    parser.add_argument(
+        "--target",
+        default="",
+        help="For CONTEXT_LOAD: the portfolio file or section that was read (e.g. 'identity.md').",
+    )
+    parser.add_argument(
+        "--chain-id",
+        default="",
+        help="Optional correlation ID linking multiple events in one orchestration chain.",
+    )
+    parser.add_argument(
+        "--phase-status",
+        choices=["success", "failed"],
+        default="",
+        help="Optional outcome marker for the phase. Used by the wallboard to compute per-skill failure rate.",
+    )
+    parser.add_argument(
+        "--matched-fields",
+        default="",
+        help="Comma-separated list of dispatcher metadata fields that justified this routing choice "
+             "(e.g. 'accepted_intents,capabilities,stack_tags'). Used to audit metadata-grounded routing.",
+    )
+    parser.add_argument(
+        "--match-score",
+        type=float,
+        default=None,
+        help="Optional candidate score from match_candidates.py for this routing decision.",
+    )
     parser.add_argument(
         "--policy-topic",
         help="Optional policy topic consulted before dispatch, such as RoutingPolicies.",
@@ -204,8 +241,19 @@ def main():
         "skills_used": skills_used,
         "intent": args.intent,
         "reason": args.reason,
-        "decision": args.decision
+        "decision": args.decision,
     }
+    if args.target:
+        entry["target"] = args.target
+    # Auto-generate chain_id when not explicitly provided.
+    # Chains share a single chain_id by passing --chain-id explicitly; standalone events get a unique one.
+    entry["chain_id"] = args.chain_id if args.chain_id else str(uuid.uuid4())[:8]
+    if args.phase_status:
+        entry["phase_status"] = args.phase_status
+    if args.matched_fields:
+        entry["matched_fields"] = [f.strip() for f in args.matched_fields.split(",") if f.strip()]
+    if args.match_score is not None:
+        entry["match_score"] = args.match_score
     model_name = resolve_model_name(args.model)
     if model_name:
         entry["model"] = model_name
@@ -229,6 +277,12 @@ def main():
             topic=args.policy_topic or "RoutingPolicies",
         )
         if isinstance(auto_policy_lookup, dict):
+            # Auto-lookup cannot know whether the policy was applied — mark as None (unknown).
+            # Pass --policy-applied true|false explicitly when the agent can confirm.
+            if "applied" not in auto_policy_lookup or auto_policy_lookup.get("applied") is False:
+                auto_policy_lookup["applied"] = None
+            if "changed_routing" not in auto_policy_lookup or auto_policy_lookup.get("changed_routing") is False:
+                auto_policy_lookup["changed_routing"] = None
             entry["policy_lookup"] = auto_policy_lookup
 
     # Ensure log directory exists

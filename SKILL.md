@@ -2,8 +2,6 @@
 name: skill-dispatcher
 description: High-performance routing engine for AI AgentSkills. Classifies user intent, scans for specialized skills, and generates optimal dispatch decisions (HANDOFF, SEQUENCE, or NO_MATCH). Use this to manage complexity in large skill environments and ensure the best-equipped skill handles every task.
 metadata:
-  author: jovd83
-  version: 3.1.0
   dispatcher-category: analysis
   dispatcher-capabilities: skill-routing, capability-discovery, contract-routing
   dispatcher-accepted-intents: route_skill_work, resolve_skill_handoff
@@ -15,7 +13,10 @@ metadata:
   dispatcher-persistent-directories: logs, registry
   dispatcher-layer: execution
   dispatcher-lifecycle: active
+  dispatcher-preferred-model: claude-sonnet-4-6
 ---
+
+> **Author:** jovd83 | **Version:** 3.1.0 | **License:** MIT
 
 # Skill Dispatcher
 
@@ -63,7 +64,7 @@ If a specialist skill commonly orchestrates other skills after it receives a sin
 
 1.  **Usage Logging (MANDATORY)**:
     - Check `config/settings.json`. If `logging_enabled` is `true`, **YOU MUST** run this command before providing your final answer:
-      `./log-dispatch.cmd --skill <selected_skill> --intent <intent> --reason <reason>` (or `./log-dispatch.sh` on Linux)
+      `./log-dispatch.cmd --skill <selected_skill> --intent <intent> --model <model_name> --reason <reason>` (or `./log-dispatch.sh` on Linux)
     - For `SEQUENCE`, include the full ordered chain with `--skills "<primary-skill>, <secondary-skill>"` so every used skill remains fresh in telemetry and staleness audits.
     - `SEQUENCE` telemetry is invalid without `--skills`; the logger will reject it.
     - **MANDATORY TOOL SEQUENCING**: This command MUST be either the single tool call in the turn, or the **VERY FIRST tool call** in a sequence of tool calls. Never perform specialized work (writing files, running tests) in a turn where a dispatch log is promised but not yet executed.
@@ -75,11 +76,21 @@ If a specialist skill commonly orchestrates other skills after it receives a sin
     - Consult `SKILL_REGISTRY.json` as the machine-readable source of truth.
     - Use `SKILL_REGISTRY.md` for quick human inspection and auditing.
     - Review `registry/DISPATCH_POLICY.md` for prioritized routing heuristics. (Policy files remain in the installation folder).
-    - **Canonical Bootstrap Step**: Before complex routing, prefer `python scripts/dispatch_bootstrap.py --topic RoutingPolicies --format json`. This is the one command agents should remember. It loads repo-local project memory first, overlays shared-memory defaults second, and emits a bootstrap note plus logger-ready policy fields.
-    - **Bootstrap Artifact**: Treat `DISPATCH_BOOTSTRAP.json` / `DISPATCH_BOOTSTRAP.md` as the reusable policy context artifact for the current routing pass instead of separately re-checking project memory or shared memory.
-    - **Shared Memory Check**: If the `shared-memory` skill is present, check only for stable cross-project routing policy or SOPs. Do not treat shared memory as a task-local router.
-4.  **Heuristic Evaluation**:
-    - **Capability First**: Prefer exact `accepted_intents`, then matching `capabilities`, then category and tags.
+    - **Bootstrap Step (MANDATORY when `shared-memory` is installed, recommended otherwise)**:
+      ```
+      python scripts/dispatch_bootstrap.py --topic RoutingPolicies --format json
+      ```
+      This is the one command agents must run before complex routing. It loads repo-local project memory first, overlays shared-memory defaults second, and automatically emits a `POLICY_CONSULT` telemetry event. Skip only for simple single-HANDOFF decisions to `risk: low` skills where shared-memory is not installed.
+    - **Bootstrap Artifact**: Treat `DISPATCH_BOOTSTRAP.json` / `DISPATCH_BOOTSTRAP.md` as the reusable policy context for the current routing pass — do not re-check project memory or shared memory separately after running bootstrap.
+    - **Shared Memory Policy**: The `shared-memory` skill is a data source consulted by bootstrap, not a work handler. Do not route work to it — let bootstrap read it automatically.
+4.  **Candidate Shortlist (REQUIRED)**: Run `match_candidates.py` to get a metadata-grounded shortlist before deciding. This anchors your decision in real `dispatcher-*` fields rather than free-form scanning all 78 skills.
+    ```
+    python scripts/match_candidates.py --intent <normalized_intent> [--keywords k1,k2] [--stack s1,s2] [--max-risk medium] --format json
+    ```
+    The output is a top-5 list with per-field score breakdowns. **Pick from the shortlist** unless you have a clear contextual reason to override (recent IDE state, explicit user preference, conversation history). If you override, log it with `--reason "override: <why>"` so the routing audit trail captures the exception.
+
+5.  **Heuristic Evaluation** (apply when comparing within the shortlist):
+    - **Capability First**: The shortlist is already sorted by `accepted_intents` > `capabilities` > category. Top score wins unless other heuristics push otherwise.
     - **Artifact Compatibility**: Ensure `current_artifact_type` can feed the skill and the skill can produce `target_artifact_type`.
     - **State Alignment**: Ensure the skill's `writes_files` and `risk` flags align with the user's current environment state.
     - **Repo-Native Stack Preference**: Prefer a repository-native stack over an organization default when the repository already shows clear evidence.
@@ -87,7 +98,14 @@ If a specialist skill commonly orchestrates other skills after it receives a sin
     - **Context-First (Phase 0)**: For high-risk execution tasks or `SEQUENCE` decisions, prepend a context-loading step per §12 of `DISPATCH_POLICY.md`. Prefer `personal-context-portfolio` or `codebase-context` as Phase 0.
     - **Layer-Aware Selection**: When resolving conflicts between skills that share the same intent, use the `layer` field (§13) to prefer feedback skills for review intents and execution skills for generative intents.
     - **Lifecycle Check**: Skip `archived` skills entirely. Warn on `sunset` skills per §14.
-5.  **Memory & Promotion**:
+
+6.  **Audit-Trail Logging**: When you log the dispatch event, include the matched fields and score from the shortlist so the wallboard can audit how often metadata actually drove the decision:
+    ```
+    log-dispatch.cmd --skill <picked> --intent <intent> --reason <why> \
+                     --matched-fields "accepted_intents,capabilities,stack_tags" \
+                     --match-score 24.0
+    ```
+7.  **Memory & Promotion**:
     - Consult project-local routing memory through `python scripts/project_memory.py` for repo-specific trends and policies.
     - **Promotion**: If a routing decision proves exceptionally stable or identifies a new cross-project policy, prefer `python <shared-memory>/scripts/manage_memory.py promote ...` instead of ad-hoc remembering. Do not promote repo-local routes.
 
