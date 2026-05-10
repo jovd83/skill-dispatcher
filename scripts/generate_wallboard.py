@@ -445,6 +445,24 @@ def _build_chain_summary(chain_skill, chain_id, all_events, first_dt, chain_defs
         for m in [_re.search(r"tokens=(\d+)", ev.get("reason", ""))]
         if m
     )
+
+    # Entry subtitle: take the reason from the chain-skill's own dispatch event,
+    # skipping internal orchestrator housekeeping reasons (chain_initiated, phase=…).
+    entry_reason = ""
+    for ev in all_events:
+        sk = ev.get("selected_skill", "")
+        reason = ev.get("reason", "")
+        if sk == chain_skill and reason and "chain_initiated" not in reason and not reason.startswith("phase="):
+            entry_reason = reason
+            break
+    # Fall back to the intent of the first non-empty phase
+    if not entry_reason:
+        for ev in all_events:
+            intent = ev.get("intent", "")
+            if intent and intent not in ("execute_chain", "execute_routing_decision"):
+                entry_reason = intent.replace("_", " ")
+                break
+
     return {
         "chain_id":    chain_id,
         "chain_skill": chain_skill,
@@ -453,6 +471,7 @@ def _build_chain_summary(chain_skill, chain_id, all_events, first_dt, chain_defs
         "phases":      ordered,
         "failed_count": sum(1 for p in ordered if p["status"] == "failed"),
         "total_tokens": total_tokens,
+        "subtitle":    entry_reason,
     }
 
 
@@ -691,6 +710,12 @@ def render_chains_section(events, chain_defs=None) -> str:
         n_total = len(defined)
         progress = f'{n_exec}/{n_total} phases' if n_total > 1 else "1 phase"
 
+        subtitle = chain.get("subtitle", "")
+        subtitle_html = (
+            f'<div class="chn-subtitle">{html.escape(subtitle)}</div>'
+            if subtitle else ""
+        )
+
         cards.append(
             f'<div class="chain-card">'
             f'<div class="chn-header">'
@@ -701,6 +726,7 @@ def render_chains_section(events, chain_defs=None) -> str:
             f'<span class="chn-progress">{progress}</span>'
             f'{tok_html}{badge}'
             f'</div>'
+            f'{subtitle_html}'
             f'<div class="chain-track">{"".join(steps)}</div>'
             f'</div>'
         )
@@ -1588,6 +1614,13 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             background: rgba(33,150,243,0.1);
             padding: 2px 8px;
             border-radius: 4px;
+        }}
+        .chn-subtitle {{
+            font-size: 0.82rem;
+            color: #6d4c41;
+            font-style: italic;
+            margin: -8px 0 12px;
+            opacity: 0.85;
         }}
         .chn-ts    {{ color:#999; font-size:0.76rem; }}
         .chn-dur   {{ color:#2e7d32; font-weight:700; font-size:0.82rem; }}
