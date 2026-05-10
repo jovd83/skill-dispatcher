@@ -878,7 +878,7 @@ def main():
         chains_html=chains_html,
         failure_stats_dict=failure_stats_dict,
         token_cost_html=token_cost_html,
-        token_cost_count=len(token_cost_items)
+        token_cost_count=len(token_cost_items),
     )
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -953,20 +953,40 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         for rank, (name, count) in enumerate(skills_summary, start=1)
     ])
 
+    _MODEL_TOP_N = 8
     if models_summary:
+        top_models = models_summary[:_MODEL_TOP_N]
         model_hits_rows = "".join(
+            render_model_count_row(rank, name, count)
+            for rank, (name, count) in enumerate(top_models, start=1)
+        )
+        all_model_rows = "".join(
             render_model_count_row(rank, name, count)
             for rank, (name, count) in enumerate(models_summary, start=1)
         )
+        show_all_models_link = (
+            f'<a href="?view=all-models" class="all-link">(All {len(models_summary)})</a>'
+            if len(models_summary) > _MODEL_TOP_N else ""
+        )
     else:
         model_hits_rows = '<div class="muted-cell" style="padding: 12px 0;">No model telemetry yet.</div>'
+        all_model_rows = model_hits_rows
+        show_all_models_link = ""
     model_hits_html = (
         '<div class="card">'
         '<div class="section-kicker">Distribution</div>'
         '<div class="section-heading-row">'
         '<h2>Hits per Model</h2>'
+        f'{show_all_models_link}'
         '</div>'
         f'{model_hits_rows}'
+        '</div>'
+    )
+    all_models_html = (
+        '<div class="card all-models-card">'
+        '<div class="section-kicker">Complete Model Leaderboard</div>'
+        '<h2>All Models</h2>'
+        f'{all_model_rows}'
         '</div>'
     )
 
@@ -1885,6 +1905,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
 
         .detail-shell,
         .all-activity-shell,
+        .all-models-shell,
         .staleness-shell,
         .token-cost-shell {{
             display: none;
@@ -1902,6 +1923,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         body.detail-mode .detail-shell {{ display: block; }}
         body.all-activity-mode .container, body.all-activity-mode .wall-shell {{ display: none; }}
         body.all-activity-mode .all-activity-shell {{ display: block; }}
+        body.all-models-mode .container, body.all-models-mode .wall-shell {{ display: none; }}
+        body.all-models-mode .all-models-shell {{ display: block; }}
         body.staleness-mode .container, body.staleness-mode .wall-shell {{ display: none; }}
         body.staleness-mode .staleness-shell {{ display: block; }}
         body.token-cost-mode .container, body.token-cost-mode .wall-shell {{ display: none; }}
@@ -2115,6 +2138,18 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         {all_skills_html}
     </div>
 
+    <!-- All Models View -->
+    <div class="all-models-shell" id="all-models-view">
+        <div class="detail-header">
+            <div>
+                <span class="stat-label">Model Distribution</span>
+                <h1>All Models</h1>
+            </div>
+            <button class="btn" onclick="goHome()">Back to Overview</button>
+        </div>
+        {all_models_html}
+    </div>
+
     <!-- Skill Detail View -->
     <div class="detail-shell" id="details">
         <div class="detail-header">
@@ -2232,7 +2267,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             else url.searchParams.delete('skill');
             window.history.replaceState({{}}, '', url);
             
-            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'staleness-mode', 'token-cost-mode');
+            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'all-models-mode', 'staleness-mode', 'token-cost-mode');
 
             if (view === 'wallboard') {{
                 document.getElementById('body').classList.add('radiator-mode');
@@ -2242,6 +2277,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 renderDetail(skill);
             }} else if (view === 'all-activity') {{
                 document.getElementById('body').classList.add('all-activity-mode');
+            }} else if (view === 'all-models') {{
+                document.getElementById('body').classList.add('all-models-mode');
             }} else if (view === 'staleness') {{
                 document.getElementById('body').classList.add('staleness-mode');
             }} else if (view === 'token-cost') {{
@@ -2520,6 +2557,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 setView('detail', skill);
             }} else if (view === 'all-activity') {{
                 setView('all-activity');
+            }} else if (view === 'all-models') {{
+                setView('all-models');
             }} else if (view === 'staleness') {{
                 setView('staleness');
             }} else if (view === 'token-cost') {{
