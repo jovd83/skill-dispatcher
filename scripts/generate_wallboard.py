@@ -1533,7 +1533,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         }}
 
         /* ── Orchestrator Chains ───────────────────────────────────── */
-        .chains-card {{ margin-top: 18px; }}
+        .chains-card {{ margin-top: 18px; width: 100%; box-sizing: border-box; }}
         .chains-empty {{ color:#999; font-size:0.88rem; margin:12px 0 0; }}
         .chain-card {{
             border: 1px solid rgba(120,89,53,0.13);
@@ -1541,6 +1541,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             padding: 14px 18px 16px;
             margin-bottom: 14px;
             background: rgba(255,255,255,0.62);
+            width: 100%;
+            box-sizing: border-box;
         }}
         /* Header row */
         .chn-header {{
