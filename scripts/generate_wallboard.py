@@ -979,7 +979,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         for rank, (name, count) in enumerate(skills_summary, start=1)
     ])
 
-    _MODEL_TOP_N = 8
+    _MODEL_TOP_N = 5
     if models_summary:
         top_models = models_summary[:_MODEL_TOP_N]
         model_hits_rows = "".join(
@@ -1579,7 +1579,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         }}
 
         /* ── Orchestrator Chains ───────────────────────────────────── */
-        .chains-card {{ margin-top: 18px; width: 100%; box-sizing: border-box; }}
+        .chains-card {{ margin-top: 0; width: 100%; box-sizing: border-box; grid-column: 1 / -1; }}
         .chains-empty {{ color:#999; font-size:0.88rem; margin:12px 0 0; }}
         .chain-card {{
             border: 1px solid rgba(120,89,53,0.13);
@@ -2135,10 +2135,6 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                     <a href="?view=all-activity" class="all-link">(All)</a>
                 </div>
                 {leaderboard_html}
-                <div class="environment-block">
-                    <span class="stat-label">Environment</span>
-                    <div style="font-weight: 700; font-size: 1rem;">{environment_info}</div>
-                </div>
             </div>
             <div class="card recent-activity-card">
                 <div class="section-kicker">Timeline</div>
