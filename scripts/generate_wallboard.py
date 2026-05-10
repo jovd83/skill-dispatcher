@@ -671,7 +671,7 @@ def render_chains_section(events, chain_defs=None) -> str:
             for sep in (" — ", " - "):
                 if sep in short:
                     short = short.split(sep, 1)[-1]
-            short = short[:26]
+            short = short[:36]
 
             # Match against executed events
             exec_data = executed.get(phase_skill) if phase_skill else None
@@ -1651,7 +1651,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             display: flex;
             flex-direction: column;
             align-items: center;
-            width: 76px;
+            width: 108px;
             flex-shrink: 0;
         }}
         /* Node circle */
@@ -1668,22 +1668,21 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .sn-fail    {{ background:#e53935; border-color:#b71c1c; }}
         .sn-agent   {{ background:#fb8c00; border-color:#e65100; }}
         .sn-pending {{ background:#f0ede8; border-color:#d0ccc7; }}
-        /* Connector line between nodes */
+        /* Connector line between nodes — flex:1 so it stretches to fill available card width */
         .step-conn {{
             height: 2px;
             background: #ddd;
-            min-width: 14px;
-            width: 24px;
-            flex-shrink: 0;
+            flex: 1;
+            min-width: 20px;
             margin-top: 8px;
         }}
         .sc-done {{ background:#43a047; }}
         /* Step labels */
         .step-label {{
-            font-size: 0.6rem;
+            font-size: 0.63rem;
             text-align: center;
             margin-top: 5px;
-            max-width: 76px;
+            max-width: 108px;
             word-break: break-word;
             line-height: 1.3;
             color: #bbb;
