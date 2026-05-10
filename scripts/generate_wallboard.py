@@ -411,14 +411,9 @@ def _parse_iso(timestamp: str):
 def compute_chains(events, max_chains: int = 20):
     """Group events by chain_id; return chain summaries sorted newest-first.
 
-    Each chain summary is a dict:
-        {
-            "chain_id": str,
-            "started": iso str of first event,
-            "duration_sec": float (0 if only one event),
-            "phases": [(timestamp, decision, skill, intent, dt_from_start_sec), ...],
-        }
-
+    Each chain summary:
+        chain_id, chain_skill (entry skill), started, duration_sec,
+        phases (deduplicated start events only), failed_count, total_tokens
     Events without a chain_id are ignored.
     """
     by_chain = {}
@@ -437,23 +432,61 @@ def compute_chains(events, max_chains: int = 20):
         last_dt = _parse_iso(last_ts)
         duration_sec = (last_dt - first_dt).total_seconds() if (first_dt and last_dt) else 0.0
 
-        phases = []
+        # Chain-skill name: from the SEQUENCE event with reason=chain_initiated
+        chain_skill = "unknown"
         for ev in chain_events:
+            if ev.get("decision") == "SEQUENCE" and "chain_initiated" in ev.get("reason", ""):
+                chain_skill = ev.get("selected_skill", "unknown")
+                break
+        if chain_skill == "unknown" and chain_events:
+            chain_skill = chain_events[0].get("selected_skill", "unknown")
+
+        # Phases: deduplicate — keep only phase-start events (exclude phase-complete duplicates).
+        # Phase-complete events carry phase_status; phase-start events for the same skill precede them.
+        # Strategy: if a skill appears twice in sequence, keep only the one with phase_status (final state).
+        seen_skills = {}
+        ordered = []
+        for ev in chain_events:
+            if ev.get("decision") == "SEQUENCE" and "chain_initiated" in ev.get("reason", ""):
+                continue  # skip the chain entry event from the phase list
+            skill = ev.get("selected_skill", "?")
+            status = ev.get("phase_status", "")
             ev_dt = _parse_iso(ev.get("timestamp", ""))
             dt_from_start = (ev_dt - first_dt).total_seconds() if (ev_dt and first_dt) else 0.0
-            phases.append((
-                ev.get("timestamp", ""),
-                ev.get("decision", "HANDOFF"),
-                ev.get("selected_skill", "?"),
-                ev.get("intent", ""),
-                dt_from_start,
-            ))
+            entry = {
+                "ts": ev.get("timestamp", ""),
+                "decision": ev.get("decision", "HANDOFF"),
+                "skill": skill,
+                "intent": ev.get("intent", ""),
+                "dt": dt_from_start,
+                "status": status,
+            }
+            if skill in seen_skills:
+                idx = seen_skills[skill]
+                if status:  # prefer the event that carries a final phase_status
+                    ordered[idx] = entry
+            else:
+                seen_skills[skill] = len(ordered)
+                ordered.append(entry)
+
+        failed_count = sum(1 for p in ordered if p["status"] == "failed")
+
+        # Token total: extract from reason fields like "tokens=1234"
+        import re as _re
+        total_tokens = 0
+        for ev in chain_events:
+            m = _re.search(r"tokens=(\d+)", ev.get("reason", ""))
+            if m:
+                total_tokens += int(m.group(1))
 
         chains.append({
             "chain_id": cid,
+            "chain_skill": chain_skill,
             "started": first_ts,
             "duration_sec": duration_sec,
-            "phases": phases,
+            "phases": ordered,
+            "failed_count": failed_count,
+            "total_tokens": total_tokens,
         })
 
     chains.sort(key=lambda c: c["started"], reverse=True)
@@ -461,40 +494,70 @@ def compute_chains(events, max_chains: int = 20):
 
 
 def render_chains_section(events) -> str:
-    """Render the Recent Chains card. Returns empty string if no chains exist."""
+    """Render the Recent Chains card. Always shows; displays a placeholder when no chains exist."""
     chains = compute_chains(events)
+
     if not chains:
-        return ""
+        return (
+            '<div class="card chains-card">'
+            '<div class="section-kicker">Chains</div>'
+            '<h2>Orchestrator Chains</h2>'
+            '<p style="color:#999;font-size:0.88rem;margin:12px 0 0">'
+            'No chains logged yet. Chains appear here once <code>dispatch_cli.py --execute</code> '
+            'routes to a chain-capable skill (<code>bug-fix-lifecycle</code>, '
+            '<code>new-feature-sdlc-skill</code>, …). Each chain is grouped by its '
+            '<code>chain_id</code> so every phase is visible in one row.'
+            '</p>'
+            '</div>'
+        )
 
     rows = []
     for chain in chains:
         cid = html.escape(chain["chain_id"])
-        started = html.escape(chain["started"][:19])  # trim to seconds
+        chain_skill = html.escape(chain["chain_skill"])
+        started = html.escape(chain["started"][:19])
         total_dur = chain["duration_sec"]
-        total_dur_label = f"{total_dur:.2f}s" if total_dur > 0 else "—"
-        phase_count = len(chain["phases"])
+        total_dur_label = f"{total_dur:.1f}s" if total_dur > 0 else "—"
+        phases = chain["phases"]
+        failed = chain["failed_count"]
+        tokens = chain["total_tokens"]
+        token_label = f"{tokens:,} tok" if tokens else ""
+
+        status_badge = ""
+        if failed:
+            status_badge = f'<span class="chain-status-fail">{failed} failed</span>'
+        elif phases:
+            status_badge = '<span class="chain-status-ok">✓ complete</span>'
 
         phase_pills = []
-        for ts, decision, skill, intent, dt in chain["phases"]:
-            decision_safe = html.escape(decision)
-            skill_safe = html.escape(skill)
-            intent_safe = html.escape(intent[:50], quote=True)
-            dt_label = f"+{dt:.2f}s"
+        for p in phases:
+            skill_safe = html.escape(p["skill"])
+            intent_safe = html.escape(p["intent"][:60], quote=True)
+            dt_label = f"+{p['dt']:.1f}s"
+            status = p["status"]
+            status_cls = (
+                "chain-phase-ok" if status == "success"
+                else "chain-phase-fail" if status == "failed"
+                else "chain-phase-agent" if p["skill"] == chain["chain_skill"] and not status
+                else ""
+            )
             phase_pills.append(
-                f'<span class="chain-phase" title="{intent_safe}">'
-                f'<span class="chain-decision">{decision_safe}</span>'
-                f' <span class="chain-skill">{skill_safe}</span>'
-                f' <span class="chain-dt">{dt_label}</span>'
+                f'<span class="chain-phase {status_cls}" title="{intent_safe}">'
+                f'<span class="chain-skill">{skill_safe}</span>'
+                f'<span class="chain-dt">{dt_label}</span>'
                 f'</span>'
             )
 
         rows.append(
             f'<div class="chain-row">'
             f'<div class="chain-meta">'
+            f'<span class="chain-skill-name">{chain_skill}</span>'
             f'<span class="chain-id" title="{cid}">{cid[:8]}</span>'
             f'<span class="chain-started">{started}</span>'
-            f'<span class="chain-duration">total: {total_dur_label}</span>'
-            f'<span class="chain-phase-count">{phase_count} phase{"s" if phase_count != 1 else ""}</span>'
+            f'<span class="chain-duration">{total_dur_label}</span>'
+            f'<span class="chain-phase-count">{len(phases)} phases</span>'
+            f'{(" · " + token_label) if token_label else ""}'
+            f'{status_badge}'
             f'</div>'
             f'<div class="chain-phases">{"".join(phase_pills)}</div>'
             f'</div>'
@@ -502,7 +565,8 @@ def render_chains_section(events) -> str:
 
     return (
         '<div class="card chains-card">'
-        '<div class="section-kicker">Recent Chains (orchestrator runs grouped by chain_id)</div>'
+        '<div class="section-kicker">Chains</div>'
+        '<h2>Orchestrator Chains</h2>'
         + "".join(rows)
         + '</div>'
     )
@@ -1369,7 +1433,15 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         }}
         .chain-decision {{ font-weight: 700; color: #0d47a1; font-size: 0.7rem; letter-spacing: 0.04em; }}
         .chain-skill {{ color: #4a148c; font-weight: 600; }}
-        .chain-dt {{ color: #2e7d32; font-family: 'Consolas','Menlo',monospace; font-size: 0.72rem; }}
+        .chain-dt {{ color: #888; font-family: 'Consolas','Menlo',monospace; font-size: 0.7rem; }}
+        .chain-skill-name {{ font-weight: 700; color: #1a237e; font-size: 0.92rem; margin-right: 4px; }}
+        .chain-phase-ok {{ border-color: rgba(46,125,50,0.3); background: rgba(232,245,233,0.9); }}
+        .chain-phase-ok .chain-skill {{ color: #2e7d32; }}
+        .chain-phase-fail {{ border-color: rgba(183,28,28,0.3); background: rgba(255,235,238,0.9); }}
+        .chain-phase-fail .chain-skill {{ color: #b71c1c; }}
+        .chain-phase-agent {{ border-color: rgba(245,127,23,0.3); background: rgba(255,248,225,0.9); }}
+        .chain-status-ok {{ color: #2e7d32; font-size: 0.75rem; font-weight: 600; margin-left: 6px; }}
+        .chain-status-fail {{ color: #b71c1c; font-size: 0.75rem; font-weight: 600; margin-left: 6px; }}
 
         .failure-rate {{
             display: inline-block;
