@@ -1480,6 +1480,9 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             grid-column: 2;
             grid-row: 1 / span 2;
         }}
+        .main-content > .card {{
+            align-self: start;
+        }}
 
         h2 {{
             font-family: "Baskerville Old Face", "Palatino Linotype", Georgia, serif;
