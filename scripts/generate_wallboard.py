@@ -1476,12 +1476,14 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             align-items: start;
         }}
 
+        .left-col {{
+            display: flex;
+            flex-direction: column;
+            gap: 26px;
+            align-self: start;
+        }}
         .main-content > .recent-activity-card {{
             grid-column: 2;
-            grid-row: 1 / span 2;
-        }}
-        .main-content > .card {{
-            align-self: start;
         }}
 
         h2 {{
@@ -2130,20 +2132,22 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         </section>
 
         <section class="main-content">
-            <div class="card">
-                <div class="section-kicker">Leaderboard</div>
-                <div class="section-heading-row">
-                    <h2>Top Performers</h2>
-                    <a href="?view=all-activity" class="all-link">(All)</a>
+            <div class="left-col">
+                <div class="card">
+                    <div class="section-kicker">Leaderboard</div>
+                    <div class="section-heading-row">
+                        <h2>Top Performers</h2>
+                        <a href="?view=all-activity" class="all-link">(All)</a>
+                    </div>
+                    {leaderboard_html}
                 </div>
-                {leaderboard_html}
+                {model_hits_html}
             </div>
             <div class="card recent-activity-card">
                 <div class="section-kicker">Timeline</div>
                 <h2>Recent Activity</h2>
                 {timeline_html}
             </div>
-            {model_hits_html}
             {chains_html}
         </section>
     </div>
