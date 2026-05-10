@@ -493,73 +493,138 @@ def compute_chains(events, max_chains: int = 20):
     return chains[:max_chains]
 
 
-def render_chains_section(events) -> str:
-    """Render the Recent Chains card. Always shows; displays a placeholder when no chains exist."""
+def load_chain_definitions() -> dict:
+    """Load chain_definition.json files from the runtime skills tree.
+    Returns {chain_skill_name: [phase_dicts, ...]}.
+    """
+    skills_root = Path.home() / ".agents" / "skills"
+    result = {}
+    if not skills_root.exists():
+        return result
+    for skill_dir in skills_root.iterdir():
+        cd = skill_dir / "config" / "chain_definition.json"
+        if not cd.exists():
+            continue
+        try:
+            data = json.loads(cd.read_text(encoding="utf-8"))
+            name = data.get("chain_name", skill_dir.name)
+            result[name] = data.get("phases", [])
+        except Exception:
+            pass
+    return result
+
+
+def render_chains_section(events, chain_defs=None) -> str:
+    """Render Orchestrator Chains section.
+
+    One card per chain. Each card shows the full phase stepper from chain_definition.json
+    with status overlaid: green (done), red (failed), amber (agent-handled), grey (not reached).
+    """
     chains = compute_chains(events)
+    chain_defs = chain_defs or {}
 
     if not chains:
         return (
             '<div class="card chains-card">'
             '<div class="section-kicker">Chains</div>'
             '<h2>Orchestrator Chains</h2>'
-            '<p style="color:#999;font-size:0.88rem;margin:12px 0 0">'
-            'No chains logged yet. Chains appear here once <code>dispatch_cli.py --execute</code> '
-            'routes to a chain-capable skill (<code>bug-fix-lifecycle</code>, '
-            '<code>new-feature-sdlc-skill</code>, …). Each chain is grouped by its '
-            '<code>chain_id</code> so every phase is visible in one row.'
+            '<p class="chains-empty">No chains logged yet. Chains appear once '
+            '<code>dispatch_cli.py --execute</code> routes to a chain-capable skill '
+            '(<code>bug-fix-lifecycle</code>, <code>new-feature-sdlc-skill</code>, …). '
+            'All phases share a <code>chain_id</code> and render as a single stepper card.'
             '</p>'
             '</div>'
         )
 
-    rows = []
+    cards = []
     for chain in chains:
-        cid = html.escape(chain["chain_id"])
-        chain_skill = html.escape(chain["chain_skill"])
-        started = html.escape(chain["started"][:19])
-        total_dur = chain["duration_sec"]
-        total_dur_label = f"{total_dur:.1f}s" if total_dur > 0 else "—"
-        phases = chain["phases"]
+        cid = chain["chain_id"]
+        chain_skill = chain["chain_skill"]
+        started = chain["started"][:19]
+        dur = chain["duration_sec"]
+        dur_label = f"{dur:.1f}s" if dur > 0 else "—"
         failed = chain["failed_count"]
         tokens = chain["total_tokens"]
-        token_label = f"{tokens:,} tok" if tokens else ""
 
-        status_badge = ""
-        if failed:
-            status_badge = f'<span class="chain-status-fail">{failed} failed</span>'
-        elif phases:
-            status_badge = '<span class="chain-status-ok">✓ complete</span>'
+        badge = (
+            f'<span class="chn-badge chn-badge-fail">{failed} failed</span>' if failed
+            else '<span class="chn-badge chn-badge-ok">&#10003; done</span>'
+        )
+        tok_html = f'<span class="chn-tok">{tokens:,} tok</span>' if tokens else ""
 
-        phase_pills = []
-        for p in phases:
-            skill_safe = html.escape(p["skill"])
-            intent_safe = html.escape(p["intent"][:60], quote=True)
-            dt_label = f"+{p['dt']:.1f}s"
-            status = p["status"]
-            status_cls = (
-                "chain-phase-ok" if status == "success"
-                else "chain-phase-fail" if status == "failed"
-                else "chain-phase-agent" if p["skill"] == chain["chain_skill"] and not status
-                else ""
+        # Build a lookup of executed phases by skill name
+        executed = {p["skill"]: p for p in chain["phases"]}
+
+        # Get the full phase list from the chain definition if available
+        defined = chain_defs.get(chain_skill, [])
+        if not defined:
+            # No definition: synthesise from executed events only
+            defined = [
+                {"skill": p["skill"], "name": p["skill"], "id": p["skill"]}
+                for p in chain["phases"]
+            ]
+
+        # Build stepper steps
+        steps = []
+        for i, phase_def in enumerate(defined):
+            phase_skill = phase_def.get("skill")  # None = agent-handled
+            phase_name = phase_def.get("name", phase_skill or "agent")
+
+            # Strip "Step N — " / "Step N - " prefix for display
+            short = phase_name
+            for sep in (" — ", " - "):
+                if sep in short:
+                    short = short.split(sep, 1)[-1]
+            short = short[:26]
+
+            # Match against executed events
+            exec_data = executed.get(phase_skill) if phase_skill else None
+            note = html.escape(phase_skill or "agent-handled", quote=True)
+
+            if phase_skill is None:
+                node_cls, lbl_cls, time_html = "sn-agent", "sl-agent", ""
+            elif exec_data:
+                st = exec_data.get("status", "")
+                node_cls = "sn-fail" if st == "failed" else "sn-done"
+                lbl_cls  = "sl-fail" if st == "failed" else "sl-done"
+                dt = exec_data.get("dt", 0)
+                time_html = f'<div class="step-time">+{dt:.1f}s</div>'
+            else:
+                node_cls, lbl_cls, time_html = "sn-pending", "sl-pending", ""
+
+            # Connector after this step (not after the last one)
+            conn_done = exec_data is not None and (exec_data.get("status") != "failed")
+            conn_html = (
+                f'<div class="step-conn {"sc-done" if conn_done else ""}"></div>'
+                if i < len(defined) - 1 else ""
             )
-            phase_pills.append(
-                f'<span class="chain-phase {status_cls}" title="{intent_safe}">'
-                f'<span class="chain-skill">{skill_safe}</span>'
-                f'<span class="chain-dt">{dt_label}</span>'
-                f'</span>'
+
+            steps.append(
+                f'<div class="chain-step-wrap">'
+                f'<div class="chain-step">'
+                f'<div class="step-node {node_cls}" title="{note}"></div>'
+                f'<div class="step-label {lbl_cls}">{html.escape(short)}</div>'
+                f'{time_html}'
+                f'</div>'
+                f'{conn_html}'
+                f'</div>'
             )
 
-        rows.append(
-            f'<div class="chain-row">'
-            f'<div class="chain-meta">'
-            f'<span class="chain-skill-name">{chain_skill}</span>'
-            f'<span class="chain-id" title="{cid}">{cid[:8]}</span>'
-            f'<span class="chain-started">{started}</span>'
-            f'<span class="chain-duration">{total_dur_label}</span>'
-            f'<span class="chain-phase-count">{len(phases)} phase{"s" if len(phases) != 1 else ""}</span>'
-            f'{(" · " + token_label) if token_label else ""}'
-            f'{status_badge}'
+        n_exec = len([p for p in chain["phases"] if p["skill"] != chain_skill])
+        n_total = len(defined)
+        progress = f'{n_exec}/{n_total} phases' if n_total > 1 else "1 phase"
+
+        cards.append(
+            f'<div class="chain-card">'
+            f'<div class="chn-header">'
+            f'<span class="chn-name">{html.escape(chain_skill)}</span>'
+            f'<span class="chn-id" title="{html.escape(cid)}">{cid[:8]}</span>'
+            f'<span class="chn-ts">{html.escape(started)}</span>'
+            f'<span class="chn-dur">{html.escape(dur_label)}</span>'
+            f'<span class="chn-progress">{progress}</span>'
+            f'{tok_html}{badge}'
             f'</div>'
-            f'<div class="chain-phases">{"".join(phase_pills)}</div>'
+            f'<div class="chain-track">{"".join(steps)}</div>'
             f'</div>'
         )
 
@@ -567,7 +632,7 @@ def render_chains_section(events) -> str:
         '<div class="card chains-card">'
         '<div class="section-kicker">Chains</div>'
         '<h2>Orchestrator Chains</h2>'
-        + "".join(rows)
+        + "".join(cards)
         + '</div>'
     )
 
@@ -696,8 +761,9 @@ def main():
         "E": policy_counter.get("error", 0),
     }
 
-    # Chain analytics (orchestrator runs grouped by chain_id)
-    chains_html = render_chains_section(events)
+    # Chain analytics — load definitions so stepper shows all phases, not just executed ones
+    chain_defs = load_chain_definitions()
+    chains_html = render_chains_section(events, chain_defs)
 
     # Per-skill failure stats: count phase_status occurrences per selected_skill.
     # Skills with no phase_status events at all simply don't display a rate.
@@ -1389,59 +1455,120 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             border: 1px solid rgba(120, 89, 53, 0.1);
         }}
 
+        /* ── Orchestrator Chains ───────────────────────────────────── */
         .chains-card {{ margin-top: 18px; }}
-        .chain-row {{
-            border: 1px solid rgba(120, 89, 53, 0.12);
-            border-radius: 10px;
-            padding: 10px 14px;
-            margin-bottom: 8px;
-            background: rgba(255, 255, 255, 0.5);
+        .chains-empty {{ color:#999; font-size:0.88rem; margin:12px 0 0; }}
+        .chain-card {{
+            border: 1px solid rgba(120,89,53,0.13);
+            border-radius: 14px;
+            padding: 14px 18px 16px;
+            margin-bottom: 14px;
+            background: rgba(255,255,255,0.62);
         }}
-        .chain-meta {{
+        /* Header row */
+        .chn-header {{
             display: flex;
-            gap: 18px;
             align-items: center;
-            font-size: 0.82rem;
-            color: #6d4c41;
-            margin-bottom: 6px;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
         }}
-        .chain-id {{
+        .chn-name {{
+            font-weight: 800;
+            font-size: 1.05rem;
+            color: #1a237e;
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        .chn-id {{
             font-family: 'Consolas','Menlo',monospace;
+            font-size: 0.72rem;
             font-weight: 700;
             color: #1565c0;
-            background: rgba(33, 150, 243, 0.08);
+            background: rgba(33,150,243,0.1);
             padding: 2px 8px;
             border-radius: 4px;
         }}
-        .chain-started {{ color: #888; font-size: 0.78rem; }}
-        .chain-duration {{ color: #2e7d32; font-weight: 600; }}
-        .chain-phase-count {{ color: #999; font-size: 0.78rem; }}
-        .chain-phases {{
+        .chn-ts    {{ color:#999; font-size:0.76rem; }}
+        .chn-dur   {{ color:#2e7d32; font-weight:700; font-size:0.82rem; }}
+        .chn-progress {{ color:#999; font-size:0.74rem; }}
+        .chn-tok   {{ color:#aaa; font-size:0.72rem; }}
+        .chn-badge {{
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 20px;
+        }}
+        .chn-badge-ok   {{ background:rgba(46,125,50,0.1); color:#2e7d32; }}
+        .chn-badge-fail {{ background:rgba(183,28,28,0.1); color:#b71c1c; }}
+        /* Stepper track */
+        .chain-track {{
             display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
+            align-items: flex-start;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            scrollbar-width: thin;
         }}
-        .chain-phase {{
-            display: inline-flex;
-            gap: 6px;
-            align-items: baseline;
-            background: rgba(247, 245, 240, 0.9);
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 0.78rem;
-            border: 1px solid rgba(120, 89, 53, 0.08);
+        .chain-step-wrap {{
+            display: flex;
+            align-items: flex-start;
+            flex-shrink: 0;
         }}
-        .chain-decision {{ font-weight: 700; color: #0d47a1; font-size: 0.7rem; letter-spacing: 0.04em; }}
-        .chain-skill {{ color: #4a148c; font-weight: 600; }}
-        .chain-dt {{ color: #888; font-family: 'Consolas','Menlo',monospace; font-size: 0.7rem; }}
-        .chain-skill-name {{ font-weight: 700; color: #1a237e; font-size: 0.92rem; margin-right: 4px; }}
-        .chain-phase-ok {{ border-color: rgba(46,125,50,0.3); background: rgba(232,245,233,0.9); }}
-        .chain-phase-ok .chain-skill {{ color: #2e7d32; }}
-        .chain-phase-fail {{ border-color: rgba(183,28,28,0.3); background: rgba(255,235,238,0.9); }}
-        .chain-phase-fail .chain-skill {{ color: #b71c1c; }}
-        .chain-phase-agent {{ border-color: rgba(245,127,23,0.3); background: rgba(255,248,225,0.9); }}
-        .chain-status-ok {{ color: #2e7d32; font-size: 0.75rem; font-weight: 600; margin-left: 6px; }}
-        .chain-status-fail {{ color: #b71c1c; font-size: 0.75rem; font-weight: 600; margin-left: 6px; }}
+        .chain-step {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 76px;
+            flex-shrink: 0;
+        }}
+        /* Node circle */
+        .step-node {{
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 2px solid #d0ccc7;
+            background: #f0ede8;
+            flex-shrink: 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }}
+        .sn-done    {{ background:#43a047; border-color:#2e7d32; }}
+        .sn-fail    {{ background:#e53935; border-color:#b71c1c; }}
+        .sn-agent   {{ background:#fb8c00; border-color:#e65100; }}
+        .sn-pending {{ background:#f0ede8; border-color:#d0ccc7; }}
+        /* Connector line between nodes */
+        .step-conn {{
+            height: 2px;
+            background: #ddd;
+            min-width: 14px;
+            width: 24px;
+            flex-shrink: 0;
+            margin-top: 8px;
+        }}
+        .sc-done {{ background:#43a047; }}
+        /* Step labels */
+        .step-label {{
+            font-size: 0.6rem;
+            text-align: center;
+            margin-top: 5px;
+            max-width: 76px;
+            word-break: break-word;
+            line-height: 1.3;
+            color: #bbb;
+        }}
+        .sl-done    {{ color:#2e7d32; font-weight:600; }}
+        .sl-fail    {{ color:#b71c1c; font-weight:600; }}
+        .sl-agent   {{ color:#e65100; }}
+        .sl-pending {{ color:#bbb; }}
+        .step-time  {{
+            font-size: 0.57rem;
+            color: #43a047;
+            text-align: center;
+            font-family: 'Consolas','Menlo',monospace;
+            margin-top: 2px;
+        }}
 
         .failure-rate {{
             display: inline-block;
