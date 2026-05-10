@@ -555,7 +555,7 @@ def render_chains_section(events) -> str:
             f'<span class="chain-id" title="{cid}">{cid[:8]}</span>'
             f'<span class="chain-started">{started}</span>'
             f'<span class="chain-duration">{total_dur_label}</span>'
-            f'<span class="chain-phase-count">{len(phases)} phases</span>'
+            f'<span class="chain-phase-count">{len(phases)} phase{"s" if len(phases) != 1 else ""}</span>'
             f'{(" · " + token_label) if token_label else ""}'
             f'{status_badge}'
             f'</div>'
