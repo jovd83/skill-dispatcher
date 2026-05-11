@@ -38,14 +38,26 @@ def extract_logged_skills(event):
 def display_skill_label(event):
     """Render a readable label for recent activity."""
     skills = extract_logged_skills(event)
-    if skills:
-        return " -> ".join(skills)
-    return event.get("selected_skill", "Unknown")
+    if not skills:
+        return event.get("selected_skill", "Unknown")
+
+    if len(skills) > 1 and skills[0] == "skill-dispatcher":
+        # Show the real skill as primary, and the dispatcher as secondary/context
+        real_skill = skills[1]
+        others = skills[2:]
+        label = real_skill
+        if others:
+            label += f" <small style='opacity:0.6'>(+{len(others)})</small>"
+        return label
+
+    return " -> ".join(skills)
 
 
 def detail_skill_name(event):
     """Return the primary skill used for detail drill-down from timeline rows."""
     skills = extract_logged_skills(event)
+    if len(skills) > 1 and skills[0] == "skill-dispatcher":
+        return skills[1]
     if skills:
         return skills[0]
     return event.get("selected_skill", "Unknown")
@@ -411,6 +423,14 @@ def _parse_iso(timestamp: str):
 import re as _re
 
 
+def _resolve_chain_skill(ev):
+    """Resolve the real target skill from an event, handling skill-dispatcher as a wrapper."""
+    skills = extract_logged_skills(ev)
+    if len(skills) > 1 and skills[0] == "skill-dispatcher":
+        return skills[1]
+    return skills[0] if skills else "unknown"
+
+
 def _build_chain_summary(chain_skill, chain_id, all_events, first_dt, chain_defs):
     """Build a chain summary dict from a list of events sharing a logical chain."""
     if not all_events:
@@ -421,23 +441,37 @@ def _build_chain_summary(chain_skill, chain_id, all_events, first_dt, chain_defs
     last_dt  = _parse_iso(last_ts)
     duration_sec = (last_dt - first_dt).total_seconds() if (last_dt and first_dt) else 0.0
 
+    is_sequence_intent = any(e.get("decision") == "SEQUENCE" for e in all_events)
+
     seen_skills = {}
     ordered = []
     for ev in all_events:
         if ev.get("decision") == "SEQUENCE" and "chain_initiated" in ev.get("reason", ""):
             continue
-        skill  = ev.get("selected_skill", "?")
+
+        is_seq = ev.get("decision") == "SEQUENCE"
+        # If it's a sequence, we treat all listed skills as planned/hit phases
+        if is_seq:
+            skills_to_process = [s for s in extract_logged_skills(ev) if s != "skill-dispatcher"]
+        else:
+            skills_to_process = [_resolve_chain_skill(ev)]
+
         status = ev.get("phase_status", "")
         ev_dt  = _parse_iso(ev.get("timestamp", ""))
         dt     = (ev_dt - first_dt).total_seconds() if (ev_dt and first_dt) else 0.0
-        entry  = {"ts": ev.get("timestamp",""), "decision": ev.get("decision","HANDOFF"),
-                  "skill": skill, "intent": ev.get("intent",""), "dt": dt, "status": status}
-        if skill in seen_skills:
-            if status:
-                ordered[seen_skills[skill]] = entry
-        else:
-            seen_skills[skill] = len(ordered)
-            ordered.append(entry)
+
+        for skill in skills_to_process:
+            if skill == "unknown":
+                continue
+            entry = {"ts": ev.get("timestamp", ""), "decision": ev.get("decision", "HANDOFF"),
+                     "skill": skill, "intent": ev.get("intent", ""), "dt": dt, "status": status}
+            if skill in seen_skills:
+                # Update if we have real status or if this is a primary handoff hit
+                if status or not is_seq:
+                    ordered[seen_skills[skill]] = entry
+            else:
+                seen_skills[skill] = len(ordered)
+                ordered.append(entry)
 
     total_tokens = sum(
         int(m.group(1))
@@ -450,7 +484,7 @@ def _build_chain_summary(chain_skill, chain_id, all_events, first_dt, chain_defs
     # skipping internal orchestrator housekeeping reasons (chain_initiated, phase=…).
     entry_reason = ""
     for ev in all_events:
-        sk = ev.get("selected_skill", "")
+        sk = _resolve_chain_skill(ev)
         reason = ev.get("reason", "")
         if sk == chain_skill and reason and "chain_initiated" not in reason and not reason.startswith("phase="):
             entry_reason = reason
@@ -472,6 +506,7 @@ def _build_chain_summary(chain_skill, chain_id, all_events, first_dt, chain_defs
         "failed_count": sum(1 for p in ordered if p["status"] == "failed"),
         "total_tokens": total_tokens,
         "subtitle":    entry_reason,
+        "is_sequence_intent": is_sequence_intent,
     }
 
 
@@ -502,13 +537,14 @@ def compute_chains(events, chain_defs=None, max_chains: int = 20):
     # --- Strategy 1: true shared chain_id chains ---
     true_chains = {}  # chain_id -> summary
     for cid, chain_events in by_chain.items():
-        if cid in solo_ids:
+        is_seq = any(e.get("decision") == "SEQUENCE" for e in chain_events)
+        if cid in solo_ids and not is_seq:
             continue
         chain_events = sorted(chain_events, key=lambda e: e.get("timestamp", ""))
         chain_skill = next(
-            (e.get("selected_skill", "unknown") for e in chain_events
+            (_resolve_chain_skill(e) for e in chain_events
              if e.get("decision") == "SEQUENCE" and "chain_initiated" in e.get("reason", "")),
-            chain_events[0].get("selected_skill", "unknown"),
+            _resolve_chain_skill(chain_events[0]),
         )
         first_dt = _parse_iso(chain_events[0].get("timestamp", ""))
         s = _build_chain_summary(chain_skill, cid, chain_events, first_dt, chain_defs)
@@ -529,19 +565,21 @@ def compute_chains(events, chain_defs=None, max_chains: int = 20):
     # (direct model invocation). The chain_defs key is the canonical identifier.
     entry_events = []
     for cid in solo_ids:
+        # If it was already picked up as a true_chain (Strategy 1), don't treat as entry for inference
+        if cid in true_chains:
+            continue
         for ev in by_chain[cid]:
-            skill = ev.get("selected_skill", "")
-            if skill in chain_defs:
-                entry_events.append((ev, cid))
+            skills = extract_logged_skills(ev)
+            # Match if ANY skill in the event is a defined chain
+            match = next((s for s in skills if s in chain_defs), None)
+            if match:
+                entry_events.append((ev, cid, match))
                 break
 
     inferred = {}  # chain_name -> merged summary
     claimed_solo_ids = set()  # solo chain_ids absorbed into an inferred chain
 
-    for entry_ev, entry_cid in entry_events:
-        chain_skill = entry_ev.get("selected_skill", "unknown")
-        if chain_skill not in chain_defs:
-            continue
+    for entry_ev, entry_cid, chain_skill in entry_events:
         defined_skills = {ph.get("skill") for ph in chain_defs.get(chain_skill, {}).get("phases", []) if ph.get("skill")}
         entry_dt = _parse_iso(entry_ev.get("timestamp", ""))
         if not entry_dt:
@@ -552,7 +590,7 @@ def compute_chains(events, chain_defs=None, max_chains: int = 20):
         related = [entry_ev]
         related_cids = {entry_cid}
         for cid in solo_ids:
-            if cid in related_cids:
+            if cid in related_cids or cid in true_chains:
                 continue
             for ev in by_chain[cid]:
                 ev_skill = ev.get("selected_skill", "")
@@ -564,13 +602,15 @@ def compute_chains(events, chain_defs=None, max_chains: int = 20):
                     related_cids.add(cid)
                     break
 
-        if len(related) < 2:
-            continue  # only the entry event — not a real chain match
+        is_seq = entry_ev.get("decision") == "SEQUENCE"
+        if len(related) < 2 and not is_seq:
+            continue  # only the entry event and NOT an explicit sequence — skip
 
         s = _build_chain_summary(chain_skill, entry_cid, related, entry_dt, chain_defs)
         if s:
             inferred[chain_skill + entry_cid] = s
             claimed_solo_ids.update(related_cids)
+
 
     # Remaining unclaimed solo chains rendered individually
     solo_chains = {}
@@ -578,15 +618,22 @@ def compute_chains(events, chain_defs=None, max_chains: int = 20):
         if cid in claimed_solo_ids:
             continue
         chain_events = sorted(by_chain[cid], key=lambda e: e.get("timestamp", ""))
-        chain_skill = chain_events[0].get("selected_skill", "unknown")
+        chain_skill = _resolve_chain_skill(chain_events[0])
         first_dt = _parse_iso(chain_events[0].get("timestamp", ""))
         s = _build_chain_summary(chain_skill, cid, chain_events, first_dt, chain_defs)
         if s:
             solo_chains[cid] = s
 
-    all_chains = list(true_chains.values()) + list(inferred.values()) + list(solo_chains.values())
-    all_chains.sort(key=lambda c: c["started"], reverse=True)
-    return all_chains[:max_chains]
+    all_chains = list(true_chains.values()) + list(inferred.values())
+
+    # Filter: must be a defined chain
+    real_chains = [
+        c for c in all_chains
+        if c["chain_skill"] in chain_defs
+    ]
+
+    real_chains.sort(key=lambda c: c["started"], reverse=True)
+    return real_chains[:max_chains]
 
 
 def load_chain_definitions() -> dict:
@@ -613,8 +660,10 @@ def load_chain_definitions() -> dict:
     return result
 
 
-def render_all_chains_html(chain_defs: dict) -> str:
+def render_all_chains_html(chain_defs: dict, skills_counter: Counter = None, chains_counter: Counter = None) -> str:
     """Render all defined chains as blueprint documentation cards."""
+    skills_counter = skills_counter or Counter()
+    chains_counter = chains_counter or Counter()
     if not chain_defs:
         return '<p style="color:#999;font-size:0.9rem">No chain definitions found in ~/.agents/skills/*/config/chain_definition.json</p>'
 
@@ -622,6 +671,7 @@ def render_all_chains_html(chain_defs: dict) -> str:
     for chain_name, chain_data in sorted(chain_defs.items()):
         phases = chain_data.get("phases", [])
         description = chain_data.get("description", "")
+        chain_hits = chains_counter.get(chain_name, 0)
 
         steps = []
         for i, phase in enumerate(phases):
@@ -637,7 +687,16 @@ def render_all_chains_html(chain_defs: dict) -> str:
             note      = html.escape(phase_skill or "agent-handled", quote=True)
             node_cls  = "sn-bp-agent" if is_agent else "sn-bp"
             lbl_cls   = "sl-bp-agent" if is_agent else "sl-bp"
-            skill_tag = html.escape((phase_skill or "agent")[:22])
+            
+            skill_hits = skills_counter.get(phase_skill, 0) if phase_skill else 0
+            skill_tag_text = f"{phase_skill} ({skill_hits})" if phase_skill else "agent"
+            skill_tag = html.escape(skill_tag_text[:32])
+            
+            label_html = html.escape(short)
+            if phase_skill:
+                safe_js_arg = html.escape(json.dumps(phase_skill), quote=True)
+                label_html = f'<span class="clickable skill-link" onclick="showDetail({safe_js_arg})">{label_html}</span>'
+
             conn_html = (
                 '<div class="step-conn sc-bp"></div>'
                 if i < len(phases) - 1 else ""
@@ -646,7 +705,7 @@ def render_all_chains_html(chain_defs: dict) -> str:
                 f'<div class="chain-step-wrap">'
                 f'<div class="chain-step">'
                 f'<div class="step-node {node_cls}" title="{note}"></div>'
-                f'<div class="step-label {lbl_cls}">{html.escape(short)}</div>'
+                f'<div class="step-label {lbl_cls}">{label_html}</div>'
                 f'<div class="step-skill-tag">{skill_tag}</div>'
                 f'</div>'
                 f'{conn_html}'
@@ -661,7 +720,7 @@ def render_all_chains_html(chain_defs: dict) -> str:
             f'<div class="chain-def-card">'
             f'<div class="chain-def-hdr">'
             f'<span class="chain-def-name">{html.escape(chain_name)}</span>'
-            f'<span class="chain-def-count">{len(phases)} phases</span>'
+            f'<span class="chain-def-count">{len(phases)} phases | {chain_hits} hits</span>'
             f'</div>'
             f'{desc_html}'
             f'<div class="chain-track">{"".join(steps)}</div>'
@@ -777,10 +836,14 @@ def render_chains_section(events, chain_defs=None) -> str:
             if subtitle else ""
         )
 
+        safe_chain_skill = html.escape(chain_skill)
+        safe_js_arg = html.escape(json.dumps(chain_skill), quote=True)
+        chain_link = f'<span class="clickable skill-link" onclick="showDetail({safe_js_arg})">{safe_chain_skill}</span>'
+
         cards.append(
             f'<div class="chain-card">'
             f'<div class="chn-header">'
-            f'<span class="chn-name">{html.escape(chain_skill)}</span>'
+            f'<span class="chn-name">{chain_link}</span>'
             f'<span class="chn-id" title="{html.escape(cid)}">{cid[:8]}</span>'
             f'<span class="chn-ts">{html.escape(started)}</span>'
             f'<span class="chn-dur">{html.escape(dur_label)}</span>'
@@ -793,14 +856,22 @@ def render_chains_section(events, chain_defs=None) -> str:
         )
 
     return (
-        '<div class="card chains-card">'
+        '<div class="card chains-card collapsible" id="card-chains">'
+        '<div class="card-header-toggle" onclick="toggleCard(\'card-chains\')">'
+        '<div>'
         '<div class="section-kicker">Chains</div>'
-        '<div class="section-heading-row">'
         '<h2>Orchestrator Chains</h2>'
-        '<a href="?view=all-chains" class="all-link">Show all defined chains</a>'
+        '</div>'
+        '<span class="card-toggle-icon">▾</span>'
+        '</div>'
+        '<div class="card-content">'
+        '<div class="section-heading-row" style="margin-top: 10px;">'
+        '<p style="color: var(--muted); font-size: 0.9rem; margin: 0;">Executed multi-phase sequences.</p>'
+        '<a href="?view=all-chains" class="all-link">Show all definitions</a>'
         '</div>'
         + "".join(cards)
         + '</div>'
+        '</div>'
     )
 
 
@@ -930,8 +1001,15 @@ def main():
 
     # Chain analytics — load definitions so stepper shows all phases, not just executed ones
     chain_defs = load_chain_definitions()
+
+    chains_counter = Counter()
+    for ev in events:
+        chain_skill = _resolve_chain_skill(ev)
+        if chain_skill in chain_defs:
+            chains_counter[chain_skill] += 1
+
     chains_html = render_chains_section(events, chain_defs)
-    all_chains_html = render_all_chains_html(chain_defs)
+    all_chains_html = render_all_chains_html(chain_defs, skills_counter, chains_counter)
 
     # Per-skill failure stats: count phase_status occurrences per selected_skill.
     # Skills with no phase_status events at all simply don't display a rate.
@@ -1075,11 +1153,8 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         '</div>'
     )
     all_models_html = (
-        '<div class="card all-models-card">'
-        '<div class="section-kicker">Complete Model Leaderboard</div>'
-        '<h2>All Models</h2>'
+        f'<div class="section-kicker">Complete Model Leaderboard</div>'
         f'{all_model_rows}'
-        '</div>'
     )
 
     timeline_html = (
@@ -1102,13 +1177,11 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
     )
 
     all_skills_html = (
-        '<div class="card all-skills-card">'
         '<div class="section-kicker">Complete Leaderboard</div>'
         + "".join(
             render_skill_count_row(rank, name, count, failure_stats=failure_stats_dict)
             for rank, (name, count) in enumerate(all_skills_summary, start=1)
         )
-        + '</div>'
     )
 
     decision_markup = (
@@ -1217,8 +1290,202 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             width: 100%;
             max-width: none;
             margin: 0;
-            padding: 34px clamp(18px, 2vw, 34px) 48px;
+            padding: 24px 34px 48px;
             transition: opacity 0.3s ease;
+        }}
+
+        /* Sidebar Navigation */
+        .sidebar {{
+            position: fixed;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 280px;
+            background: linear-gradient(180deg, #1e1b18 0%, #12100e 100%);
+            color: #fffaf0;
+            z-index: 5000;
+            padding: 34px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+            box-shadow: 10px 0 30px rgba(0,0,0,0.15);
+            border-right: 1px solid rgba(255,255,255,0.05);
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+
+        .sidebar.collapsed {{
+            width: 80px;
+            padding: 34px 12px;
+            align-items: center;
+        }}
+
+        .sidebar.collapsed .brand-text,
+        .sidebar.collapsed .nav-item span:not(.nav-icon) {{
+            display: none;
+        }}
+
+        .sidebar.collapsed .sidebar-brand {{
+            padding: 0;
+            justify-content: center;
+        }}
+
+        .sidebar.collapsed .nav-item {{
+            padding: 14px 0;
+            justify-content: center;
+            width: 100%;
+        }}
+
+        .sidebar-toggle {{
+            position: absolute;
+            right: -14px;
+            top: 40px;
+            width: 28px;
+            height: 28px;
+            background: var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+            font-size: 14px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            z-index: 5001;
+            transition: transform 0.3s ease;
+        }}
+
+        .sidebar.collapsed .sidebar-toggle {{
+            transform: rotate(180deg);
+        }}
+
+        .sidebar-brand {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 14px;
+        }}
+
+        .brand-dot {{
+            width: 14px;
+            height: 14px;
+            background: var(--accent);
+            border-radius: 50%;
+            box-shadow: 0 0 15px var(--accent);
+        }}
+
+        .brand-text {{
+            font-family: "Baskerville Old Face", serif;
+            font-size: 1.4rem;
+            letter-spacing: -0.02em;
+        }}
+
+        .nav-menu {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }}
+
+        .nav-item {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            border-radius: 14px;
+            color: rgba(255,255,255,0.6);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }}
+
+        .nav-item:hover {{
+            color: #fff;
+            background: rgba(255,255,255,0.05);
+        }}
+
+        .nav-item.active {{
+            color: #fff;
+            background: var(--accent);
+            box-shadow: 0 8px 20px rgba(163, 78, 37, 0.3);
+        }}
+
+        .nav-icon {{
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+        }}
+
+        /* Content Adjustment for Sidebar */
+        .container, 
+        .detail-shell, 
+        .all-activity-shell, 
+        .all-models-shell, 
+        .all-chains-shell, 
+        .staleness-shell, 
+        .token-cost-shell {{
+            padding-left: 314px !important; /* sidebar width + padding */
+            transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+        
+        .wall-shell {{
+            padding-left: 300px !important;
+            transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+
+        body.sidebar-collapsed .container,
+        body.sidebar-collapsed .detail-shell,
+        body.sidebar-collapsed .all-activity-shell,
+        body.sidebar-collapsed .all-models-shell,
+        body.sidebar-collapsed .all-chains-shell,
+        body.sidebar-collapsed .staleness-shell,
+        body.sidebar-collapsed .token-cost-shell {{
+            padding-left: 114px !important;
+        }}
+
+        body.sidebar-collapsed .wall-shell {{
+            padding-left: 100px !important;
+        }}
+
+        /* Collapsible Cards */
+        .card-header-toggle {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+        }}
+
+        .card-toggle-icon {{
+            font-size: 1.2rem;
+            transition: transform 0.3s ease;
+            color: var(--muted);
+            opacity: 0.5;
+        }}
+
+        .card.collapsed .card-toggle-icon {{
+            transform: rotate(-90deg);
+        }}
+
+        .card-content {{
+            transition: max-height 0.3s ease, opacity 0.3s ease, margin-top 0.3s ease;
+            max-height: 10000px;
+            opacity: 1;
+            overflow: hidden;
+        }}
+
+        .card.collapsed .card-content {{
+            max-height: 0;
+            opacity: 0;
+            margin-top: 0 !important;
+            pointer-events: none;
+        }}
+        
+        .card.collapsed h2 {{
+            margin-bottom: 0;
         }}
 
         header {{
@@ -1280,7 +1547,6 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             margin: 0;
             letter-spacing: -0.05em;
             line-height: 0.94;
-            max-width: 9ch;
         }}
 
         .hero-subcopy {{
@@ -1304,18 +1570,7 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         .view-controls {{
             display: grid;
             gap: 16px;
-            align-content: space-between;
-        }}
-
-        .nav-actions {{
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            padding: 18px;
-            border: 1px solid rgba(72, 63, 53, 0.10);
-            border-radius: 30px;
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(248, 240, 229, 0.96));
-            box-shadow: 0 22px 40px rgba(95, 65, 31, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+            align-content: center;
         }}
 
         .btn {{
@@ -1622,8 +1877,9 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         }}
 
         .all-skills-card {{
-            max-width: 980px;
-            margin: 0 auto;
+            width: 100%;
+            max-width: none !important;
+            margin: 0;
         }}
 
         .badge {{
@@ -2058,8 +2314,23 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 radial-gradient(circle at top left, rgba(255,255,255,0.46), transparent 20%),
                 linear-gradient(180deg, #f3e8d7 0%, #eadbc4 100%);
             z-index: 2000;
-            padding: 40px;
+            padding: 48px clamp(24px, 4vw, 60px);
             overflow-y: auto;
+        }}
+
+        /* Clean Shell Headers (removing pane-in-pane feel) */
+        .shell-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 34px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(120, 89, 53, 0.15);
+        }}
+
+        .shell-header h1 {{
+            margin: 0;
+            font-size: 3rem;
         }}
 
         body.detail-mode .container, body.detail-mode .wall-shell {{ display: none; }}
@@ -2175,6 +2446,47 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
     </style>
 </head>
 <body id="body">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-toggle" onclick="toggleSidebar()">◀</div>
+        <div class="sidebar-brand">
+            <div class="brand-dot"></div>
+            <div class="brand-text">Skill Dispatcher</div>
+        </div>
+        <nav>
+            <ul class="nav-menu">
+                <li class="nav-item active" onclick="setView('dashboard')" id="nav-dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span>Overview</span>
+                </li>
+                <li class="nav-item" onclick="setView('wallboard')" id="nav-wallboard">
+                    <span class="nav-icon">🧱</span>
+                    <span>Wallboard</span>
+                </li>
+                <li class="nav-item" onclick="setView('staleness')" id="nav-staleness">
+                    <span class="nav-icon">🕰️</span>
+                    <span>Staleness Report</span>
+                </li>
+                <li class="nav-item" onclick="setView('token-cost')" id="nav-token-cost">
+                    <span class="nav-icon">🪙</span>
+                    <span>Token Cost Reports</span>
+                </li>
+                <li class="nav-item" onclick="setView('all-activity')" id="nav-all-activity">
+                    <span class="nav-icon">👥</span>
+                    <span>All Performers</span>
+                </li>
+                <li class="nav-item" onclick="setView('all-models')" id="nav-all-models">
+                    <span class="nav-icon">🤖</span>
+                    <span>All Models</span>
+                </li>
+                <li class="nav-item" onclick="setView('all-chains')" id="nav-all-chains">
+                    <span class="nav-icon">🔗</span>
+                    <span>Defined Chains</span>
+                </li>
+            </ul>
+        </nav>
+        
+    </aside>
+
     <!-- Audit Dashboard View -->
     <div class="container" id="dashboard">
         <header>
@@ -2186,19 +2498,10 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                     <span>Log consulted at {consulted_at}</span>
                     <span>Latest event in snapshot {latest_event_at}</span>
                 </div>
-                <div class="snapshot-banner" id="snapshot-banner">
-                    This dashboard is a static snapshot of the dispatch log. It refreshes the page every 30 seconds, but it only changes when <code>wallboard.html</code> is regenerated.
-                </div>
             </div>
             <div class="view-controls">
-                <div class="nav-actions">
-                    <a href="?view=wallboard" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Show Wallboard</a>
-                    <a href="?view=staleness" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Show staleness report</a>
-                    <a href="?view=token-cost" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Show token cost report ({token_cost_count})</a>
-                </div>
-                <div class="integrity-card">
-                    <span class="integrity-label">System Integrity</span>
-                    <span class="integrity-value"><span class="integrity-dot"></span>Active</span>
+                <div class="snapshot-banner" id="snapshot-banner" style="margin-top:0">
+                    This dashboard is a static snapshot of the dispatch log. It refreshes the page every 30 seconds.
                 </div>
             </div>
         </header>
@@ -2217,166 +2520,207 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
         </section>
 
         <section class="grid">
-            <div class="card stat-card">
-                <span class="stat-label">Total Skill Calls</span>
-                <div class="stat-value">{total_calls}</div>
-                <div class="stat-foot">dispatch events</div>
+            <div class="card stat-card collapsible" id="card-stats-calls">
+                <div class="card-header-toggle" onclick="toggleCard('card-stats-calls')">
+                    <span class="stat-label">Total Skill Calls</span>
+                    <span class="card-toggle-icon">▾</span>
+                </div>
+                <div class="card-content">
+                    <div class="stat-value">{total_calls}</div>
+                    <div class="stat-foot">dispatch events</div>
+                </div>
             </div>
-            <div class="card stat-card">
-                <span class="stat-label">Decision Calls (H/S/N)</span>
-                {decision_markup}
-                <div class="stat-foot">handoff / sequence / no match</div>
+            <div class="card stat-card collapsible" id="card-stats-decisions">
+                <div class="card-header-toggle" onclick="toggleCard('card-stats-decisions')">
+                    <span class="stat-label">Decision Calls (H/S/N)</span>
+                    <span class="card-toggle-icon">▾</span>
+                </div>
+                <div class="card-content">
+                    {decision_markup}
+                    <div class="stat-foot">handoff / sequence / no match</div>
+                </div>
             </div>
-            <div class="card stat-card">
-                <span class="stat-label">Unique Capabilities</span>
-                <div class="stat-value">{unique_skills}</div>
-                <div class="stat-foot">skills observed</div>
+            <div class="card stat-card collapsible" id="card-stats-skills">
+                <div class="card-header-toggle" onclick="toggleCard('card-stats-skills')">
+                    <span class="stat-label">Unique Capabilities</span>
+                    <span class="card-toggle-icon">▾</span>
+                </div>
+                <div class="card-content">
+                    <div class="stat-value">{unique_skills}</div>
+                    <div class="stat-foot">skills observed</div>
+                </div>
             </div>
-            <div class="card stat-card">
-                <span class="stat-label">Policy Lookups (H/M/E)</span>
-                {policy_markup}
-                <div class="stat-foot">hit / miss / error</div>
+            <div class="card stat-card collapsible" id="card-stats-policy">
+                <div class="card-header-toggle" onclick="toggleCard('card-stats-policy')">
+                    <span class="stat-label">Policy Lookups (H/M/E)</span>
+                    <span class="card-toggle-icon">▾</span>
+                </div>
+                <div class="card-content">
+                    {policy_markup}
+                    <div class="stat-foot">hit / miss / error</div>
+                </div>
             </div>
         </section>
 
         <section class="main-content">
             <div class="left-col">
-                <div class="card">
-                    <div class="section-kicker">Leaderboard</div>
-                    <div class="section-heading-row">
-                        <h2>Top Performers</h2>
-                        <a href="?view=all-activity" class="all-link">(All)</a>
+                <div class="card collapsible" id="card-performers">
+                    <div class="card-header-toggle" onclick="toggleCard('card-performers')">
+                        <div class="section-kicker">Leaderboard</div>
+                        <span class="card-toggle-icon">▾</span>
                     </div>
-                    {leaderboard_html}
+                    <div class="card-content">
+                        <div class="section-heading-row">
+                            <h2>Top Performers</h2>
+                            <a href="?view=all-activity" class="all-link">(All)</a>
+                        </div>
+                        {leaderboard_html}
+                    </div>
                 </div>
-                {model_hits_html}
+                <div id="model-hits-host">
+                    {model_hits_html}
+                </div>
             </div>
-            <div class="card recent-activity-card">
-                <div class="section-kicker">Timeline</div>
-                <h2>Recent Activity</h2>
-                {timeline_html}
-            </div>
-            {chains_html}
-        </section>
-    </div>
-
-    <!-- Wallboard View -->
-    <div class="wall-shell" id="wallboard-view">
-        <div class="wall-header">
-            <h1>Live Skill Distribution</h1>
-            <button class="btn" onclick="goHome()">Back to Overview</button>
-        </div>
-        <div class="wall-grid-container" id="wallboard"></div>
-    </div>
-
-    <!-- All Activity View -->
-    <div class="all-activity-shell" id="all-activity-view">
-        <div class="detail-header">
-            <div>
-                <span class="stat-label">Complete Leaderboard</span>
-                <h1>All Skills</h1>
-            </div>
-            <button class="btn" onclick="goHome()">Back to Overview</button>
-        </div>
-        {all_skills_html}
-    </div>
-
-    <!-- All Models View -->
-    <div class="all-models-shell" id="all-models-view">
-        <div class="detail-header">
-            <div>
-                <span class="stat-label">Model Distribution</span>
-                <h1>All Models</h1>
-            </div>
-            <button class="btn" onclick="goHome()">Back to Overview</button>
-        </div>
-        {all_models_html}
-    </div>
-
-    <!-- Skill Detail View -->
-    <div class="detail-shell" id="details">
-        <div class="detail-header">
-            <div>
-                <span class="stat-label">Agent Capability Detail</span>
-                <h1 id="detail-title">Skill Name</h1>
-            </div>
-            <button class="btn" onclick="goHome()">Back to Overview</button>
-        </div>
-        
-        <div class="detail-stats-grid" id="detail-stats"></div>
-        
-        <div class="table-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>Model</th>
-                        <th>Intent</th>
-                        <th>Decision</th>
-                        <th>Policy</th>
-                        <th>Reasoning</th>
-                    </tr>
-                </thead>
-                <tbody id="detail-table-body"></tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- All Defined Chains View -->
-    <div class="all-chains-shell" id="all-chains-view">
-        <div class="detail-header">
-            <div>
-                <span class="stat-label">Chain Definitions</span>
-                <h1>All Defined Chains</h1>
-            </div>
-            <button class="btn" onclick="goHome()">Back to Overview</button>
-        </div>
-        <div class="card" style="max-width:1400px;margin:0 auto;">
-            <div class="section-kicker">Blueprints</div>
-            <p style="color:#888;font-size:0.85rem;margin:0 0 24px">
-                Each card shows the full phase definition of a chain-capable skill.
-                Blue nodes are skill-handled phases; amber nodes are agent-handled.
-                Status colors (green/red) appear in the Orchestrator Chains section once a chain has been executed.
-            </p>
-            {all_chains_html}
-        </div>
-    </div>
-
-    <!-- Staleness Report View -->
-    <div class="staleness-shell" id="staleness-view">
-        <div class="detail-header">
-            <div>
-                <span class="stat-label">Harness Engineering Audit</span>
-                <h1>Staleness Report</h1>
-            </div>
-            <button class="btn" onclick="goHome()">Back to Overview</button>
+                <div class="card collapsible" id="card-activity">
+                    <div class="card-header-toggle" onclick="toggleCard('card-activity')">
+                        <div class="section-kicker">Timeline</div>
+                        <span class="card-toggle-icon">▾</span>
+                    </div>
+                    <div class="card-content">
+                        <h2>Recent Activity</h2>
+                        {timeline_html}
+                    </div>
+                </div>
+                <div id="chains-host" style="grid-column: 1 / -1; width: 100%;">
+                    {chains_html}
+                </div>
+            </section>
         </div>
 
-        <div class="card" style="max-width: 900px; margin: 0 auto; padding: 40px;">
-            <div id="staleness-content">
-                {staleness_html}
+        <!-- Wallboard View -->
+        <div class="wall-shell" id="wallboard-view">
+            <div class="wall-header">
+                <h1>Live Skill Distribution</h1>
             </div>
+            <div class="wall-grid-container" id="wallboard"></div>
         </div>
-    </div>
 
-    <!-- Token Cost Reports View -->
-    <div class="token-cost-shell" id="token-cost-view">
-        <div class="detail-header">
-            <div>
-                <span class="stat-label">Token Usage Cost Report</span>
-                <h1>Token Cost Reports</h1>
+        <!-- All Activity View -->
+        <div class="all-activity-shell" id="all-activity-view">
+            <div class="shell-header">
+                <div>
+                    <span class="stat-label">Complete Leaderboard</span>
+                    <h1>All Skills</h1>
+                </div>
+                <button class="btn btn-secondary" onclick="setView('dashboard')">Back to Dashboard</button>
             </div>
-            <div style="display:flex; gap:10px;">
-                <a href="?view=dashboard" class="btn btn-secondary">Back to Overview</a>
-                <a href="?view=staleness" class="btn btn-secondary">Staleness</a>
-                <a href="?view=wallboard" class="btn btn-secondary">Wallboard</a>
+            <div class="card">
+                {all_skills_html}
             </div>
         </div>
 
-        <div id="token-cost-content">
-            {token_cost_html}
+        <!-- All Models View -->
+        <div class="all-models-shell" id="all-models-view">
+            <div class="shell-header">
+                <div>
+                    <span class="stat-label">Model Distribution</span>
+                    <h1>All Models</h1>
+                </div>
+                <button class="btn btn-secondary" onclick="setView('dashboard')">Back to Dashboard</button>
+            </div>
+            <div class="card">
+                {all_models_html}
+            </div>
         </div>
-    </div>
+
+        <!-- Skill Detail View -->
+        <div class="detail-shell" id="details">
+            <div class="detail-header">
+                <div>
+                    <span class="stat-label">Agent Capability Detail</span>
+                    <h1 id="detail-title">Skill Name</h1>
+                </div>
+            </div>
+            
+            <div class="detail-stats-grid" id="detail-stats"></div>
+            
+            <div class="card collapsible" id="card-skill-history">
+                <div class="card-header-toggle" onclick="toggleCard('card-skill-history')">
+                    <span class="stat-label">Invocation History</span>
+                    <span class="card-toggle-icon">▾</span>
+                </div>
+                <div class="card-content">
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Model</th>
+                                    <th>Intent</th>
+                                    <th>Decision</th>
+                                    <th>Policy</th>
+                                    <th>Reasoning</th>
+                                </tr>
+                            </thead>
+                            <tbody id="detail-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Defined Chains View -->
+        <div class="all-chains-shell" id="all-chains-view">
+            <div class="shell-header">
+                <div>
+                    <span class="stat-label">Chain Definitions</span>
+                    <h1>All Defined Chains</h1>
+                </div>
+                <button class="btn btn-secondary" onclick="setView('dashboard')">Back to Dashboard</button>
+            </div>
+            <div class="card">
+                <p style="color:#888;font-size:0.85rem;margin:0 0 24px">
+                    Each card shows the full phase definition of a chain-capable skill.
+                    Blue nodes are skill-handled phases; amber nodes are agent-handled.
+                    Status colors (green/red) appear in the Orchestrator Chains section once a chain has been executed.
+                </p>
+                {all_chains_html}
+            </div>
+        </div>
+
+        <!-- Staleness Report View -->
+        <div class="staleness-shell" id="staleness-view">
+            <div class="shell-header">
+                <div>
+                    <span class="stat-label">Harness Engineering Audit</span>
+                    <h1>Staleness Report</h1>
+                </div>
+                <button class="btn btn-secondary" onclick="setView('dashboard')">Back to Dashboard</button>
+            </div>
+
+            <div style="width: 100%; max-width: 1200px; margin: 0 auto;">
+                <div id="staleness-content">
+                    {staleness_html}
+                </div>
+            </div>
+        </div>
+
+        <!-- Token Cost Reports View -->
+        <div class="token-cost-shell" id="token-cost-view">
+            <div class="shell-header">
+                <div>
+                    <span class="stat-label">Token Usage Cost Report</span>
+                    <h1>Token Cost Reports</h1>
+                </div>
+                <button class="btn btn-secondary" onclick="setView('dashboard')">Back to Dashboard</button>
+            </div>
+
+            <div style="width: 100%;">
+                <div id="token-cost-content">
+                    {token_cost_html}
+                </div>
+            </div>
+        </div>
 
     <script>
         const TREEMAP_DATA = {treemap_json};
@@ -2430,24 +2774,75 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             else url.searchParams.delete('skill');
             window.history.replaceState({{}}, '', url);
             
-            document.getElementById('body').classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'all-models-mode', 'all-chains-mode', 'staleness-mode', 'token-cost-mode');
+            const body = document.getElementById('body');
+            body.classList.remove('radiator-mode', 'detail-mode', 'all-activity-mode', 'all-models-mode', 'all-chains-mode', 'staleness-mode', 'token-cost-mode');
+
+            // Update sidebar active state
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            const activeNav = document.getElementById('nav-' + view);
+            if (activeNav) activeNav.classList.add('active');
 
             if (view === 'wallboard') {{
-                document.getElementById('body').classList.add('radiator-mode');
-                renderTreemap();
+                body.classList.add('radiator-mode');
+                // Give the browser a moment to layout the shell before measuring for treemap
+                requestAnimationFrame(() => {{
+                    setTimeout(renderTreemap, 50);
+                }});
             }} else if (view === 'detail') {{
-                document.getElementById('body').classList.add('detail-mode');
+                body.classList.add('detail-mode');
                 renderDetail(skill);
             }} else if (view === 'all-activity') {{
-                document.getElementById('body').classList.add('all-activity-mode');
+                body.classList.add('all-activity-mode');
             }} else if (view === 'all-models') {{
-                document.getElementById('body').classList.add('all-models-mode');
+                body.classList.add('all-models-mode');
             }} else if (view === 'all-chains') {{
-                document.getElementById('body').classList.add('all-chains-mode');
+                body.classList.add('all-chains-mode');
             }} else if (view === 'staleness') {{
-                document.getElementById('body').classList.add('staleness-mode');
+                body.classList.add('staleness-mode');
             }} else if (view === 'token-cost') {{
-                document.getElementById('body').classList.add('token-cost-mode');
+                body.classList.add('token-cost-mode');
+            }}
+        }}
+
+        function toggleCard(cardId) {{
+            const card = document.getElementById(cardId);
+            if (card) {{
+                card.classList.toggle('collapsed');
+                // Store state in localStorage
+                const collapsed = card.classList.contains('collapsed');
+                localStorage.setItem('card-' + cardId, collapsed ? 'collapsed' : 'expanded');
+            }}
+        }}
+
+        function toggleSidebar() {{
+            const sidebar = document.getElementById('sidebar');
+            const body = document.getElementById('body');
+            sidebar.classList.toggle('collapsed');
+            body.classList.toggle('sidebar-collapsed');
+            
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            localStorage.setItem('sidebar-collapsed', isCollapsed ? 'true' : 'false');
+            
+            // Re-render treemap if active as width changed
+            if (body.classList.contains('radiator-mode')) {{
+                setTimeout(renderTreemap, 310); // Wait for transition
+            }}
+        }}
+
+        function restoreCardStates() {{
+            document.querySelectorAll('.collapsible').forEach(card => {{
+                const state = localStorage.getItem('card-' + card.id);
+                if (state === 'collapsed') {{
+                    card.classList.add('collapsed');
+                }} else if (state === 'expanded') {{
+                    card.classList.remove('collapsed');
+                }}
+            }});
+
+            const sidebarCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+            if (sidebarCollapsed) {{
+                document.getElementById('sidebar').classList.add('collapsed');
+                document.getElementById('body').classList.add('sidebar-collapsed');
             }}
         }}
 
@@ -2700,7 +3095,14 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
                 return isVertical ? [x + rowWidth, y, w - rowWidth, h] : [x, y + rowHeight, w, h - rowHeight];
             }}
 
-            squarify(data, [], width, height, 0, 0);
+            // Use a small timeout to ensure layout has settled if visibility just changed
+            setTimeout(() => {{
+                const w = wall.clientWidth;
+                const h = wall.clientHeight;
+                if (w > 0 && h > 0) {{
+                    squarify(data, [], w, h, 0, 0);
+                }}
+            }}, 0);
         }}
 
         window.addEventListener('resize', () => {{
@@ -2734,11 +3136,14 @@ def render_html(total_calls, most_used_name, most_used_count, unique_skills, dec
             updateSnapshotBanner();
             document.documentElement.classList.add('view-ready');
         }}
-
         if (document.readyState === 'loading') {{
-            document.addEventListener('DOMContentLoaded', restoreViewFromUrl);
+            document.addEventListener('DOMContentLoaded', () => {{
+                restoreViewFromUrl();
+                restoreCardStates();
+            }});
         }} else {{
             restoreViewFromUrl();
+            restoreCardStates();
         }}
         // Safety net: ensure the page is never left hidden if something throws.
         setTimeout(() => document.documentElement.classList.add('view-ready'), 1500);

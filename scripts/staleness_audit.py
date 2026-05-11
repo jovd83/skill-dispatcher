@@ -136,9 +136,18 @@ def main():
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
-    root = script_dir.parent
-    log_path = root / "logs" / "dispatch_events.jsonl"
-    registry_path = root / "registry" / "SKILL_REGISTRY.json"
+    # Check if we are running in a persistent .agents installation
+    persistent_base = Path.home() / ".agents" / "dispatcher-data"
+    if ".agents" in str(script_dir.resolve()).lower():
+        reports_dir = persistent_base / "reports"
+        log_path = persistent_base / "logs" / "dispatch_events.jsonl"
+        registry_path = persistent_base / "registry" / "SKILL_REGISTRY.json"
+    else:
+        # Standard local repository paths
+        root = script_dir.parent
+        reports_dir = root / "reports"
+        log_path = root / "logs" / "dispatch_events.jsonl"
+        registry_path = root / "registry" / "SKILL_REGISTRY.json"
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
     events = load_events(log_path, cutoff)
@@ -150,7 +159,7 @@ def main():
 
     report = generate_report(all_skills, usage, args.days, cutoff)
 
-    output_path = Path(args.output) if args.output else root / "reports" / "staleness_report.md"
+    output_path = Path(args.output) if args.output else reports_dir / "staleness_report.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")
     print(f"[*] Staleness report written to: {output_path}")
