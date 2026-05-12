@@ -34,9 +34,22 @@ LOGGING_SNIPPET = """
 > `./log-dispatch.cmd --skill <skill_name> --intent <intent> --model <model_name> --reason <reason>` (or `./log-dispatch.sh` on Linux)
 """
 
-# Regex to find existing telemetry sections (to remove/replace them)
-# Matches "## Telemetry & Logging" and everything following it until the next heading or end of file
-TELEMETRY_SECTION_PATTERN = re.compile(r"## Telemetry & Logging.*?(\n(?=##)|$)", re.DOTALL)
+# Regex to find existing telemetry sections (to remove/replace them).
+#
+# Safety note: stop before any next Markdown ATX heading, including a top-level
+# "# Title". Earlier versions stopped only before "##", which could delete the
+# skill's real body title when telemetry appeared before it.
+TELEMETRY_SECTION_PATTERN = re.compile(
+    r"^[ \t]{0,3}##[ \t]+Telemetry & Logging[ \t]*\n.*?(?=^[ \t]{0,3}#{1,6}[ \t]+|\Z)",
+    re.DOTALL | re.MULTILINE,
+)
+FRONTMATTER_PATTERN = re.compile(r"^(\ufeff?---[ \t]*\r?\n.*?\r?\n---[ \t]*\r?\n)", re.DOTALL)
+
+def split_frontmatter(content: str):
+    match = FRONTMATTER_PATTERN.match(content)
+    if not match:
+        return None, content
+    return match.group(1).rstrip(), content[match.end():]
 
 def audit_skills(root_dir, patch=False):
     root_dir = Path(root_dir).resolve()
@@ -68,18 +81,10 @@ def audit_skills(root_dir, patch=False):
                     
                     # 2. Insert the fresh snippet
                     # Try to insert after frontmatter or before first heading
-                    if "---" in new_content:
-                        # Find the end of frontmatter
-                        parts = re.split(r"---", new_content, maxsplit=2)
-                        if len(parts) >= 3:
-                            # Reconstruct with snippet after frontmatter
-                            header = "---" + parts[1] + "---"
-                            body = parts[2].strip()
-                            # Insert at the top of the body
-                            new_content = f"{header}\n\n{LOGGING_SNIPPET.strip()}\n\n{body}"
-                        else:
-                            # Fallback: append
-                            new_content = new_content.strip() + "\n\n" + LOGGING_SNIPPET.strip()
+                    frontmatter, body = split_frontmatter(new_content)
+                    if frontmatter is not None:
+                        # Insert at the top of the body after real YAML frontmatter.
+                        new_content = f"{frontmatter}\n\n{LOGGING_SNIPPET.strip()}\n\n{body.strip()}"
                     else:
                         # Fallback: append
                         new_content = new_content.strip() + "\n\n" + LOGGING_SNIPPET.strip()

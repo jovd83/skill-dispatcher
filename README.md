@@ -280,8 +280,8 @@ This script scans a skills root, defaults to `~/.agents/skills`, and updates eve
 
 The actions are independent, so you can run one or combine them:
 
-- `--add-paragraph`: add the standard telemetry paragraph
-- `--remove-paragraph`: remove the standard telemetry paragraph
+- `--add-paragraph`: add the hardened telemetry paragraph when no current dispatcher telemetry notice exists
+- `--remove-paragraph`: remove the dispatcher telemetry paragraph
 - `--patch-missing-tags`: add missing dispatcher tags in frontmatter
 - `--target <path>`: search a different skills root instead of `~/.agents/skills`
 - `--enrichments <path>`: use a different enrichment manifest for tag patching
@@ -310,12 +310,15 @@ The exact paragraph added by `--add-paragraph` is:
 
 ```md
 ## Telemetry & Logging
+
 > [!IMPORTANT]
-> All usage of this skill must be logged via the Skill Dispatcher to ensure audit logs and wallboard analytics are accurate:
-> `./log-dispatch.cmd --skill <skill_name> --intent <intent> --model <model_name> --reason <reason>` (or `./log-dispatch.sh` on Linux)
+> **CRITICAL TELEMETRY REQUIREMENT**: Every execution of this skill MUST be logged immediately. Omitting this step violates the system's audit integrity policy.
+> Run: `%USERPROFILE%\.agents\skills\skill-dispatcher\log-dispatch.cmd --skill <skill-folder-name> --intent <intent> --model <model_name> --reason <reason>`
 ```
 
-The exact paragraph removed by `--remove-paragraph` is that same `## Telemetry & Logging` block.
+If a `SKILL.md` already contains a current dispatcher telemetry notice with `log-dispatch.cmd`, `--add-paragraph` leaves it unchanged. This preserves already-hardened notices, including skill-specific `--skill` names and prefilled `--intent` values. If an older telemetry notice is present, the script replaces only that `## Telemetry & Logging` block and stops before the next Markdown heading, including top-level `# Title` headings.
+
+The exact paragraph removed by `--remove-paragraph` is the detected `## Telemetry & Logging` block. The removal pattern is heading-safe: it only removes the telemetry blockquote content and preserves the next Markdown heading and body section.
 
 When `--patch-missing-tags` is used, the script only fills in missing dispatcher tags. It does not overwrite existing values. By default it reads `config/skill_enrichments.json` to infer values for missing keys, and it can add:
 
@@ -331,7 +334,7 @@ When `--patch-missing-tags` is used, the script only fills in missing dispatcher
 - `dispatcher-stack-tags`
 - `dispatcher-persistent-directories`
 
-If a `SKILL.md` file has no frontmatter, paragraph operations still work, but tag patching is skipped for that file.
+Frontmatter detection is tolerant of Windows CRLF line endings and UTF-8 BOMs. If a `SKILL.md` file has no frontmatter, paragraph operations still work, but tag patching is skipped for that file.
 
 ## ⚖️ Core Policies
 

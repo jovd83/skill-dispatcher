@@ -10,17 +10,19 @@ import re
 from pathlib import Path
 
 NOTICE = """## Telemetry & Logging
+
 > [!IMPORTANT]
-> All usage of this skill must be logged via the Skill Dispatcher to ensure audit logs and wallboard analytics are accurate:
-> `./log-dispatch.cmd --skill <skill_name> --intent <intent> --model <model_name> --reason <reason>` (or `./log-dispatch.sh` on Linux)
+> **CRITICAL TELEMETRY REQUIREMENT**: Every execution of this skill MUST be logged immediately. Omitting this step violates the system's audit integrity policy.
+> Run: `%USERPROFILE%\\.agents\\skills\\skill-dispatcher\\log-dispatch.cmd --skill {skill_name} --intent <intent> --model <model_name> --reason <reason>`
 """
 
 NOTICE_PATTERN = re.compile(
-    r"\n*## Telemetry & Logging\s*\n"
-    r"(?:>.*\n?)*"
-    r"(?=\n## |\n# |\Z)",
+    r"^[ \t]{0,3}##[ \t]+Telemetry & Logging[ \t]*\r?\n"
+    r"(?:[ \t]*\r?\n|[ \t]{0,3}>.*(?:\r?\n|$))*"
+    r"(?=^[ \t]{0,3}#{1,6}[ \t]+|\Z)",
     re.MULTILINE,
 )
+FRONTMATTER_PATTERN = re.compile(r"^(\ufeff?---[ \t]*\r?\n.*?\r?\n---[ \t]*\r?\n)", re.DOTALL)
 
 STANDARD_SCHEMA = [
     "dispatcher-category",
@@ -71,19 +73,38 @@ def strip_notice(content: str) -> str:
     return cleaned + "\n" if cleaned else ""
 
 
-def add_notice(content: str) -> str:
-    body_without_notice = strip_notice(content)
-    notice = NOTICE.strip()
+def split_frontmatter(content: str):
+    match = FRONTMATTER_PATTERN.match(content)
+    if not match:
+        return None, content
+    return match.group(1).rstrip(), content[match.end():]
 
-    if body_without_notice.startswith("---\n"):
-        closing = body_without_notice.find("\n---\n", 4)
-        if closing != -1:
-            frontmatter_end = closing + len("\n---\n")
-            frontmatter = body_without_notice[:frontmatter_end].rstrip()
-            body = body_without_notice[frontmatter_end:].strip()
-            if body:
-                return f"{frontmatter}\n\n{notice}\n\n{body}\n"
-            return f"{frontmatter}\n\n{notice}\n"
+
+def has_current_notice(content: str) -> bool:
+    match = re.search(
+        r"(?ms)^[ \t]{0,3}##[ \t]+Telemetry & Logging[ \t]*\r?\n"
+        r"(?P<body>.*?)(?=^[ \t]{0,3}#{1,6}[ \t]+|\Z)",
+        content,
+    )
+    if not match:
+        return False
+    body = match.group("body")
+    return "log-dispatch.cmd" in body and "skill-dispatcher" in body
+
+
+def add_notice(content: str, skill_name: str) -> str:
+    if has_current_notice(content):
+        return content
+
+    body_without_notice = strip_notice(content)
+    notice = NOTICE.format(skill_name=skill_name).strip()
+
+    frontmatter, body = split_frontmatter(body_without_notice)
+    if frontmatter is not None:
+        body = body.strip()
+        if body:
+            return f"{frontmatter}\n\n{notice}\n\n{body}\n"
+        return f"{frontmatter}\n\n{notice}\n"
 
     body = body_without_notice.strip()
     if body:
@@ -189,7 +210,7 @@ def process_files(
         if remove_paragraph:
             updated = remove_notice(updated)
         if add_paragraph:
-            updated = add_notice(updated)
+            updated = add_notice(updated, skill_file.parent.name.lower())
 
         if patch_missing_tags:
             updated = patch_missing_dispatcher_tags(updated, skill_file.parent.name.lower(), enrichments)
