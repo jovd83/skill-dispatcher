@@ -73,7 +73,7 @@ Timeouts are in milliseconds. The script prints `{}` because Gemini requires JSO
 | Event | Matcher | What it catches |
 |---|---|---|
 | `PostToolUse` | `view_file\|run_command` | A SKILL.md read |
-| `Stop` | – | Also scans the transcript for SKILL.md reads written since the last scan |
+| `Stop` | – | Also scans the transcript for SKILL.md reads written since the last scan (a safety net; the live test on 2026-09-27 showed `PostToolUse` does carry `toolCall`) |
 
 Antigravity's payload has no event name, so the registration passes `--event`. It uses camelCase fields: `toolCall.name`, `toolCall.args`, `conversationId`, `modelName`.
 
@@ -98,5 +98,7 @@ The Antigravity CLI (`agy`) reads `~/.gemini/antigravity-cli/settings.json` inst
 The timeout is set to 30 s, because Grok's default is 5 s. Grok's payload is camelCase (`toolName`, `toolInput`, `sessionId`). It carries no model name; the script reads `modelId` from the session transcript (`updates.jsonl`). `grok inspect --json` lists the loaded hooks.
 
 ## Proof
+
+Live-proven on 2026-09-27: Claude Code, Codex, Grok and Antigravity (`C:\projects\VS_prj\SkillRework\proof60927-134546-wallboard-all-harnesses.png`). Gemini CLI is unit-tested only, because Google no longer accepts personal OAuth for it.
 
 `C:\projects\VS_prj\SkillRework\tools\live_hook_tests.py` runs each CLI headless against the `booklet-droodle` skill. Shell access is off where the CLI allows it, so only the hook can produce the event. It then calls `wallboard_proof.py`, which regenerates the wallboard, opens `file:///C:/Users/jochi/.agents/dispatcher-data/reports/wallboard.html`, and screenshots the Recent Activity rows the hooks produced.
