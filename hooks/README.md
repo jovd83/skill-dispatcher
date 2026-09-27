@@ -46,7 +46,9 @@ Grok also executes `~/.claude/settings.json` hooks. The script sees `GROK_HOOK_E
 | `UserPromptSubmit` | – | `$skill` mentions |
 | `Stop` | – | |
 
-`command` and `commandWindows` are identical, and the registrations use `async: true`. The model comes from the payload's `model` field.
+`command` and `commandWindows` are identical (`python …`: the `py` launcher is not on the PATH Codex gives its shell), and the registrations use `async: true`. The model comes from the payload's `model` field.
+
+Approval is tied to the file's hash: any edit to `hooks.json` needs a fresh approval in `/hooks`. The desktop app (codex-cli 0.155) and an older terminal `codex` may not share the same approval state.
 
 **One-time step:** Codex runs a new hook only after you approve it. Start `codex`, run `/hooks`, and trust "skill telemetry". Do not use `--dangerously-bypass-hook-trust`.
 
@@ -71,9 +73,15 @@ Timeouts are in milliseconds. The script prints `{}` because Gemini requires JSO
 | Event | Matcher | What it catches |
 |---|---|---|
 | `PostToolUse` | `view_file\|run_command` | A SKILL.md read |
-| `Stop` | – | |
+| `Stop` | – | Also scans the transcript for SKILL.md reads written since the last scan |
 
 Antigravity's payload has no event name, so the registration passes `--event`. It uses camelCase fields: `toolCall.name`, `toolCall.args`, `conversationId`, `modelName`.
+
+Two format rules from Antigravity's built-in `agy-customizations/docs/hooks.md`:
+- `Stop`, `PreInvocation` and `PostInvocation` take a **flat** list of handlers. Only the tool events use the `{matcher, hooks}` wrapper.
+- Every hook must print a JSON object on stdout; the script prints `{}`.
+
+The transcript stores tool arguments as JSON-in-JSON, so paths carry doubled backslashes.
 
 The Antigravity CLI (`agy`) reads `~/.gemini/antigravity-cli/settings.json` instead. It is not installed on this machine.
 
@@ -87,7 +95,7 @@ The Antigravity CLI (`agy`) reads `~/.gemini/antigravity-cli/settings.json` inst
 | `UserPromptSubmit` | – | `/skill` and `/user:skill` |
 | `Stop` | – | |
 
-The timeout is set to 30 s, because Grok's default is 5 s. Grok's payload is camelCase (`toolName`, `toolInput`, `sessionId`). `grok inspect --json` lists the loaded hooks.
+The timeout is set to 30 s, because Grok's default is 5 s. Grok's payload is camelCase (`toolName`, `toolInput`, `sessionId`). It carries no model name; the script reads `modelId` from the session transcript (`updates.jsonl`). `grok inspect --json` lists the loaded hooks.
 
 ## Proof
 

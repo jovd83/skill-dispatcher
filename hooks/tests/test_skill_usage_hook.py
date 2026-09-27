@@ -137,16 +137,53 @@ class HookTest(unittest.TestCase):
         r = subprocess.run([sys.executable, str(HOOK), "--harness", "antigravity", "--event", "PostToolUse"],
                            input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "{}", "Antigravity requires a JSON object on stdout")
         c = self.calls()
         self.assertEqual([self.arg(x, "--skill") for x in c], [SKILL])
         self.assertEqual(self.arg(c[0], "--model"), "gemini-3.1-pro")
         self.assertIn("antigravity hook", self.arg(c[0], "--intent"))
 
+    def test_antigravity_stop_scans_new_transcript_lines_once(self):
+        t = self.tmp / "transcript.jsonl"
+        step = {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "view_file", "args": {"AbsolutePath": RT_SKILL_MD}}]}
+        t.write_text(json.dumps(step) + "\n", encoding="utf-8")
+        payload = {"conversationId": "a2", "modelName": "gemini-3.1-pro", "transcriptPath": str(t),
+                   "executionNum": 1, "terminationReason": "model_stop"}
+
+        def stop():
+            r = subprocess.run([sys.executable, str(HOOK), "--harness", "antigravity", "--event", "Stop"],
+                               input=json.dumps(payload), capture_output=True, text=True, env=self.env, timeout=60)
+            self.assertEqual(r.stdout.strip(), "{}")
+
+        stop()
+        self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
+        self.assertIn("(transcript)", self.arg(self.calls()[0], "--reason"))
+        stop()  # nothing new in the transcript -> no second event
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_antigravity_transcript_with_nested_json_escaping(self):
+        """Real Antigravity transcripts store args as JSON-in-JSON: the path has 4 backslashes per separator."""
+        t = self.tmp / "transcript2.jsonl"
+        inner = json.dumps(RT_SKILL_MD)  # "C:\\Users\\..."  (quoted, escaped once)
+        step = {"tool_calls": [{"name": "view_file", "args": {"AbsolutePath": inner}}]}
+        t.write_text(json.dumps(step) + "\n", encoding="utf-8")  # escaped twice on disk
+        self.assertIn("\\\\\\\\", t.read_text(encoding="utf-8"))
+        payload = {"conversationId": "a3", "modelName": "gemini-3.1-pro", "transcriptPath": str(t)}
+        r = subprocess.run([sys.executable, str(HOOK), "--harness", "antigravity", "--event", "Stop"],
+                           input=json.dumps(payload), capture_output=True, text=True, env=self.env, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
+
     # --- Grok -------------------------------------------------------------------------------
     def test_grok_camelcase_read_file(self):
+        t = self.tmp / "updates.jsonl"  # Grok's transcript: the only place its model name appears
+        t.write_text('{"type":"turn","modelId":"grok-4.7","content":"x"}\n', encoding="utf-8")
         self.run_hook("grok", {"hook_event_name": "PostToolUse", "hookEventName": "post_tool_use", "sessionId": "k1",
-                               "toolName": "read_file", "toolInput": {"path": RT_SKILL_MD}})
-        self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
+                               "toolName": "read_file", "toolInput": {"path": RT_SKILL_MD},
+                               "transcriptPath": str(t), "transcript_path": str(t)})
+        c = self.calls()
+        self.assertEqual([self.arg(x, "--skill") for x in c], [SKILL])
+        self.assertEqual(self.arg(c[0], "--model"), "grok-4.7")
 
     # --- robustness -------------------------------------------------------------------------
     def test_debug_dump_failure_does_not_stop_logging(self):

@@ -79,7 +79,8 @@ def model_from_transcript(path):
         data = p.read_bytes()[-400_000:].decode("utf-8", errors="replace")
     except OSError:
         return None
-    hits = re.findall(r'"model"\s*:\s*"([^"<>]{3,80})"', data)
+    # Claude/Gemini write "model"; Grok's updates.jsonl writes "modelId".
+    hits = re.findall(r'"(?:model|modelId|model_id)"\s*:\s*"([^"<>]{3,80})"', data)
     hits = [h for h in hits if h not in ("<synthetic>",)]
     return hits[-1] if hits else None
 
@@ -109,7 +110,7 @@ def detect_from_tool(tool, tool_input, skills):
         if name:
             found.append((name, f"{tool} tool"))
     text = json.dumps(tool_input, ensure_ascii=False) if not isinstance(tool_input, str) else tool_input
-    text = text.replace("\\\\", "\\")
+    text = re.sub(r"\\{2,}", r"\\", text)  # JSON escaping, sometimes nested (Antigravity transcripts: \\\\)
     for m in SKILL_PATH.finditer(text):
         how = f"{tool} read SKILL.md" + (f" ({m.group('sub')})" if m.group("sub") else "")
         found.append((m.group("name"), how))
@@ -150,14 +151,14 @@ def main():
     raw = sys.stdin.read()
     if args.harness == "claude-code" and os.environ.get("GROK_HOOK_EVENT"):
         return  # Grok also executes ~/.claude/settings.json hooks; its own registration handles Grok.
-    payload = json.loads(raw) if raw.strip() else {}
     if args.debug or os.environ.get("SKILL_HOOK_DEBUG") == "1" or (HOOK_DIR / "debug.flag").exists():
-        try:  # a debugging aid must never stop the logging itself
+        try:  # dump before parsing so malformed payloads are captured too; never fatal
             dbg = HOOK_DIR / "debug-payloads"
             dbg.mkdir(parents=True, exist_ok=True)
             (dbg / f"{args.harness}-{time.time_ns()}.json").write_text(raw[:200_000], encoding="utf-8")
         except OSError:
             pass
+    payload = json.loads(raw) if raw.strip() else {}
 
     call = payload.get("toolCall") if isinstance(payload.get("toolCall"), dict) else {}  # Antigravity shape
     event = args.event or first(payload, "hook_event_name", "hookEventName", default="?")
@@ -181,6 +182,19 @@ def main():
         if hits and not model:  # model unknown before the first reply: log at turn end
             sess["pending"] += [[n, h, event] for n, h in hits]
             hits = []
+
+    # Antigravity: its documented PostToolUse payload may omit the tool call, so on Stop also scan the
+    # part of the conversation transcript written since the last scan for SKILL.md reads.
+    if args.harness == "antigravity" and event == "Stop":
+        tpath = first(payload, "transcriptPath", "transcript_path")
+        try:
+            data = Path(tpath).read_bytes() if tpath else b""
+        except OSError:
+            data = b""
+        start = sess.get("transcript_offset", 0) if len(data) >= sess.get("transcript_offset", 0) else 0
+        fresh = data[start:].decode("utf-8", errors="replace")
+        sess["transcript_offset"] = len(data)
+        hits += [(n, h + " (transcript)") for n, h in detect_from_tool("view_file", fresh, skills)]
 
     if model or event in ("Stop", "AfterAgent", "stop", "SessionEnd"):
         hits += [(n, h, e) for n, h, e in sess.get("pending", [])]
@@ -207,6 +221,7 @@ if __name__ == "__main__":
                 f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {sys.argv[1:]} {exc!r}\n")
         except Exception:
             pass
-    if "--harness" in sys.argv and "gemini" in sys.argv:
+    # Gemini CLI and Antigravity require a JSON object on stdout ({} = no decision, let the agent continue).
+    if "--harness" in sys.argv and ("gemini" in sys.argv or "antigravity" in sys.argv):
         print("{}")
     sys.exit(0)
