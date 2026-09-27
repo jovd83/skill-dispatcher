@@ -7,7 +7,7 @@
       "playwright-skill",
       "restassured-skill",
       "junit5-skill",
-      "test-artifact-export-skill"
+      "test-management-sync"
     ]
   }
 }
