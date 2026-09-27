@@ -105,6 +105,12 @@ class HookTest(unittest.TestCase):
                                 "prompt": f"please use ${SKILL} for the intro slide"})
         self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
 
+    def test_codex_dollar_mention_followed_by_punctuation(self):
+        """Regression (2026-09-27 live run): 'Use $booklet-droodle.' was read as 'booklet-droodle.'."""
+        self.run_hook("codex", {"hook_event_name": "UserPromptSubmit", "session_id": "x4", "model": "gpt-5.6-sol",
+                                "prompt": f"Use ${SKILL}. Do not generate any image."})
+        self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
+
     def test_nested_sub_skill_maps_to_parent(self):
         p = HOME / ".agents" / "skills" / "playwright-skill" / "core" / "SKILL.md"
         self.run_hook("codex", {"hook_event_name": "PostToolUse", "session_id": "x3", "model": "gpt-5.6-sol",

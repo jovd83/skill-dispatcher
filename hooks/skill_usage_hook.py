@@ -121,12 +121,16 @@ def detect_from_prompt(prompt, harness, skills):
     if not isinstance(prompt, str):
         return []
     found = []
+
+    def clean(name):  # "Use $booklet-droodle." -> "booklet-droodle"
+        return name.rstrip("._-")
+
     m = PROMPT_SLASH.match(prompt)
-    if m and m.group("name").lower() in skills:
-        found.append((m.group("name"), "user /command"))
+    if m and clean(m.group("name")).lower() in skills:
+        found.append((clean(m.group("name")), "user /command"))
     if harness == "codex":
-        found += [(m.group("name"), "user $mention") for m in PROMPT_DOLLAR.finditer(prompt)
-                  if m.group("name").lower() in skills]
+        found += [(clean(m.group("name")), "user $mention") for m in PROMPT_DOLLAR.finditer(prompt)
+                  if clean(m.group("name")).lower() in skills]
     return found
 
 
