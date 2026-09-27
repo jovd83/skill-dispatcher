@@ -42,7 +42,7 @@ Grok also executes `~/.claude/settings.json` hooks. The script sees `GROK_HOOK_E
 
 | Event | Matcher | What it catches |
 |---|---|---|
-| `PostToolUse` | `Bash` | Codex loads a skill with a shell read such as `Get-Content -Raw '…\SKILL.md'` |
+| `PostToolUse` | `*` (all tools) | A SKILL.md read such as `Get-Content -Raw '…\SKILL.md'`. Codex's code mode runs shell commands through a tool named `exec`, not `Bash`, so the matcher covers every tool and the script filters. |
 | `UserPromptSubmit` | – | `$skill` mentions |
 | `Stop` | – | |
 
