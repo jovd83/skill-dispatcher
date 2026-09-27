@@ -26,6 +26,7 @@ On top of that log the skill:
 - **It does not route every task.** Harnesses pick skills from their descriptions; the dispatcher only recommends when explicitly asked. The skill sets `disable-model-invocation: true`, so Claude Code never loads it on its own.
 - **It does not ask models to log anything.** Logging is the hooks' job. `log-dispatch` remains for manual or scripted events only.
 - **It does not read or write shared memory.** The automatic `RoutingPolicies` lookup in the logger was removed in 4.0.0, together with the shared-memory skill it depended on.
+- **It does not write to Honcho unless you opt in.** Set `SKILL_DISPATCH_HONCHO_SYNC=1` to mirror each event into Honcho memory (`scripts/sync_to_honcho.py`, needs `requests` and `HONCHO_API_KEY`); by default the usage log stays local.
 - **It does not inject anything into other skills.** `skill_md_telemetry_notice.py --add-paragraph` is retired; use `--remove-paragraph` or the rework's `strip_notices.py` to clean up old installs.
 - **It is not a sync tool.** `scripts/sync_skills_to_agents.py` is superseded by a manifest-driven sync that copies whole skill folders.
 

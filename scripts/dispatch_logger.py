@@ -247,6 +247,18 @@ def main():
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
 
+    # Optional: mirror the event into Honcho memory. Off by default since 4.0.0 - with hooks logging
+    # every skill use, the mirror (plus a Honcho dream per event) flooded the user representation.
+    # Opt in with SKILL_DISPATCH_HONCHO_SYNC=1.
+    sync_path = script_dir / "scripts" / "sync_to_honcho.py"
+    if os.environ.get("SKILL_DISPATCH_HONCHO_SYNC") == "1" and sync_path.exists():
+        try:
+            subprocess.Popen([sys.executable, str(sync_path), json.dumps(entry)],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except Exception:
+            pass  # Non-blocking failure
+
     # Auto-Update Wallboard
     generator_path = script_dir / "scripts" / "generate_wallboard.py"
     if generator_path.exists() and os.environ.get("SKILL_DISPATCH_DISABLE_WALLBOARD") != "1":

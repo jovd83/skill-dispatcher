@@ -11,6 +11,7 @@ The dispatcher becomes an analytics skill. Usage is logged by harness hooks inst
 ### Changed
 - `SKILL.md` rewritten around the analytics tasks: wallboard, registry, staleness audit, and skill recommendation on request.
 - README rewritten to the house standard.
+- The Honcho mirror is opt-in. `scripts/sync_to_honcho.py` was added only to the installed copy (May 2026) and is now part of the repo. The logger calls it only when `SKILL_DISPATCH_HONCHO_SYNC=1`. It used to post every event and schedule a Honcho dream after each one, which filled the user representation with dispatch noise.
 
 ### Removed
 - The mandatory "log every dispatch" workflow, and routing in front of every task.
