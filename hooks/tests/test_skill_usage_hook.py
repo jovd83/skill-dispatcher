@@ -111,6 +111,39 @@ class HookTest(unittest.TestCase):
                                 "prompt": f"Use ${SKILL}. Do not generate any image."})
         self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
 
+    def test_codex_invalid_utf8_in_payload_still_logs(self):
+        """Regression (2026-09-27, Codex app): a web-tool result with invalid UTF-8 crashed the debug dump."""
+        payload = json.dumps({"hook_event_name": "PostToolUse", "session_id": "x5", "model": "gpt-5.6-sol",
+                              "tool_name": "webrun",
+                              "tool_input": {"open": [{"ref_id": f"file:///{RT_SKILL_MD.replace(chr(92), '/')}"}]},
+                              "tool_response": "PLACEHOLDER"}).encode("utf-8")
+        payload = payload.replace(b"PLACEHOLDER", b"bad \xed\xb3\x81 bytes")  # an encoded lone surrogate
+        hooks = self.tmp / "hooks"
+        hooks.mkdir()
+        (hooks / "debug.flag").write_text("", encoding="utf-8")
+        r = subprocess.run([sys.executable, str(HOOK), "--harness", "codex"], input=payload, capture_output=True,
+                           env=self.env, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
+        self.assertFalse((hooks / "errors.log").exists())
+
+    def test_codex_stop_scans_only_recorded_tool_calls(self):
+        """Codex fires no PostToolUse for a hung command; its transcript also lists every skill's path."""
+        other = str(HOME / ".agents" / "skills" / "sketchy-slides" / "SKILL.md")
+        lines = [
+            {"type": "response_item", "payload": {"type": "message", "role": "developer",
+                                                  "content": [{"type": "input_text", "text": f"Skills: {other} {RT_SKILL_MD}"}]}},
+            {"type": "response_item", "payload": {"type": "custom_tool_call", "name": "exec",
+                                                  "input": f"const r = await tools.exec_command({{cmd:\"Get-Content -Raw '{RT_SKILL_MD}'\"}});"}},
+        ]
+        t = self.tmp / "rollout.jsonl"
+        t.write_text("\n".join(json.dumps(l) for l in lines) + "\n", encoding="utf-8")
+        stop = {"hook_event_name": "Stop", "session_id": "x6", "model": "gpt-5.6-sol", "transcript_path": str(t)}
+        self.run_hook("codex", stop)
+        c = self.calls()
+        self.assertEqual([self.arg(x, "--skill") for x in c], [SKILL], "sketchy-slides is only listed, not read")
+        self.assertIn("(transcript)", self.arg(c[0], "--reason"))
+
     def test_nested_sub_skill_maps_to_parent(self):
         p = HOME / ".agents" / "skills" / "playwright-skill" / "core" / "SKILL.md"
         self.run_hook("codex", {"hook_event_name": "PostToolUse", "session_id": "x3", "model": "gpt-5.6-sol",

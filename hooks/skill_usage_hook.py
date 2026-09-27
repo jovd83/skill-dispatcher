@@ -146,21 +146,52 @@ def log_event(harness, skill, how, event, model, session):
     subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
 
 
+TOOL_CALL_TYPES = {"function_call", "custom_tool_call", "local_shell_call"}
+
+
+def new_transcript_text(tpath, sess, tool_calls_only):
+    """Transcript text appended since the previous scan of this session (offset kept in the state)."""
+    try:
+        data = Path(tpath).read_bytes() if tpath else b""
+    except OSError:
+        return ""
+    start = sess.get("transcript_offset", 0)
+    if start > len(data):  # transcript was rewritten: start over
+        start = 0
+    sess["transcript_offset"] = len(data)
+    fresh = data[start:].decode("utf-8", errors="replace")
+    if not tool_calls_only:
+        return fresh
+    parts = []
+    for line in fresh.splitlines():
+        try:
+            item = json.loads(line).get("payload", {})
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(item, dict) and item.get("type") in TOOL_CALL_TYPES:
+            parts.append(str(item.get("arguments") or item.get("input") or item.get("action") or ""))
+    return "\n".join(parts)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--harness", required=True, choices=["claude-code", "codex", "gemini", "antigravity", "grok"])
     ap.add_argument("--event", help="event name, for harnesses whose payload omits it (Antigravity)")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
-    raw = sys.stdin.read()
+    # Read bytes and decode leniently: tool output inside a payload can carry invalid UTF-8
+    # (seen 2026-09-27 in a Codex web-tool result), which must not break the hook.
+    stream = getattr(sys.stdin, "buffer", None)
+    raw = stream.read().decode("utf-8", errors="replace") if stream else sys.stdin.read()
     if args.harness == "claude-code" and os.environ.get("GROK_HOOK_EVENT"):
         return  # Grok also executes ~/.claude/settings.json hooks; its own registration handles Grok.
     if args.debug or os.environ.get("SKILL_HOOK_DEBUG") == "1" or (HOOK_DIR / "debug.flag").exists():
         try:  # dump before parsing so malformed payloads are captured too; never fatal
             dbg = HOOK_DIR / "debug-payloads"
             dbg.mkdir(parents=True, exist_ok=True)
-            (dbg / f"{args.harness}-{time.time_ns()}.json").write_text(raw[:200_000], encoding="utf-8")
-        except OSError:
+            (dbg / f"{args.harness}-{time.time_ns()}.json").write_text(raw[:200_000], encoding="utf-8",
+                                                                        errors="replace")
+        except Exception:
             pass
     payload = json.loads(raw) if raw.strip() else {}
 
@@ -187,18 +218,14 @@ def main():
             sess["pending"] += [[n, h, event] for n, h in hits]
             hits = []
 
-    # Antigravity: its documented PostToolUse payload may omit the tool call, so on Stop also scan the
-    # part of the conversation transcript written since the last scan for SKILL.md reads.
-    if args.harness == "antigravity" and event == "Stop":
-        tpath = first(payload, "transcriptPath", "transcript_path")
-        try:
-            data = Path(tpath).read_bytes() if tpath else b""
-        except OSError:
-            data = b""
-        start = sess.get("transcript_offset", 0) if len(data) >= sess.get("transcript_offset", 0) else 0
-        fresh = data[start:].decode("utf-8", errors="replace")
-        sess["transcript_offset"] = len(data)
-        hits += [(n, h + " (transcript)") for n, h in detect_from_tool("view_file", fresh, skills)]
+    # Safety net at turn end: scan the part of the session transcript written since the last scan.
+    # Antigravity's PostToolUse payload may omit the tool call; Codex fires no PostToolUse for a
+    # command that hangs or is terminated. Codex's transcript also lists every installed skill's
+    # path in its prompt, so there only recorded tool calls are scanned.
+    if args.harness in ("antigravity", "codex") and event == "Stop":
+        fresh = new_transcript_text(first(payload, "transcriptPath", "transcript_path"), sess,
+                                    tool_calls_only=(args.harness == "codex"))
+        hits += [(n, h + " (transcript)") for n, h in detect_from_tool("tool call", fresh, skills)]
 
     if model or event in ("Stop", "AfterAgent", "stop", "SessionEnd"):
         hits += [(n, h, e) for n, h, e in sess.get("pending", [])]
