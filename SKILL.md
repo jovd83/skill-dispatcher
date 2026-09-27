@@ -1,183 +1,87 @@
 ---
 name: skill-dispatcher
-description: High-performance routing engine for AI AgentSkills. Classifies user intent, scans for specialized skills, and generates optimal dispatch decisions (HANDOFF, SEQUENCE, or NO_MATCH). Use this to manage complexity in large skill environments and ensure the best-equipped skill handles every task.
+description: "Skill-library analytics: who used which skill, when, with which model, and which skills have gone stale. Regenerates the usage wallboard, rebuilds the skill registry, runs the staleness audit, and on request suggests the best-fitting skill for a task from registry metadata. Usage is logged automatically by harness hooks; this skill never has to be invoked to log anything. Use when the user asks for skill usage statistics, the wallboard, a staleness report, a registry rebuild, or explicitly asks which skill should handle something."
+disable-model-invocation: true
 metadata:
   dispatcher-category: analysis
-  dispatcher-capabilities: skill-routing, capability-discovery, contract-routing
-  dispatcher-accepted-intents: route_skill_work, resolve_skill_handoff
-  dispatcher-input-artifacts: routing_request, repo_context
-  dispatcher-output-artifacts: routing_decision, handoff_payload
-  dispatcher-stack-tags: routing, orchestration, registry, discovery
+  dispatcher-capabilities: usage-analytics, wallboard, skill-registry, staleness-audit, skill-recommendation
+  dispatcher-accepted-intents: show_skill_usage, regenerate_wallboard, rebuild_skill_registry, audit_skill_staleness, recommend_skill
+  dispatcher-input-artifacts: dispatch_log, skill_tree
+  dispatcher-output-artifacts: wallboard, skill_registry, staleness_report, skill_recommendation
+  dispatcher-stack-tags: analytics, telemetry, registry, skills
   dispatcher-risk: low
   dispatcher-writes-files: true
-  dispatcher-persistent-directories: logs, registry
-  dispatcher-layer: execution
+  dispatcher-persistent-directories: logs, registry, reports
+  dispatcher-layer: information
   dispatcher-lifecycle: active
-  dispatcher-preferred-model: claude-sonnet-4-6
 ---
 
-> **Author:** jovd83 | **Version:** 3.1.0 | **License:** MIT
+> **Author:** jovd83 | **Version:** 4.0.0 | **License:** MIT
 
 # Skill Dispatcher
 
-> [!IMPORTANT]
-> **CRITICAL TELEMETRY REQUIREMENT**: Every dispatch decision (HANDOFF or SEQUENCE) **MUST** be logged immediately using `dispatch_logger.py` if `logging_enabled` is true. Omitting this step is a violation of the system's audit integrity policy.
+Analytics for the skill library. Since 4.0.0 the dispatcher no longer sits in front of every task: harness hooks log each skill use on their own (see `hooks/README.md`), and this skill turns that log into answers.
 
-You are the `skill-dispatcher`, the strategic routing layer of the agent. Your mission is to ensure that every user request is handled by the most qualified specialized skill available, or a logical sequence of skills, while minimizing risk and maximizing precision.
+Run scripts from the installed copy (`~/.agents/skills/skill-dispatcher/`). Data lives outside the skill, in `~/.agents/dispatcher-data/`, so reinstalls never touch it:
 
-## Core Competencies
+| Data | Path |
+|---|---|
+| Usage log (one JSON event per line) | `~/.agents/dispatcher-data/logs/dispatch_events.jsonl` |
+| Wallboard | `~/.agents/dispatcher-data/reports/wallboard.html` |
+| Skill registry | `~/.agents/dispatcher-data/registry/SKILL_REGISTRY.json` (+ `.md`) |
+| Hook script, state, debug | `~/.agents/dispatcher-data/hooks/` |
 
-- **Intent Classification**: Rapidly identifying primary and secondary user goals.
-- **Capability Discovery**: Dynamically indexing available capabilities, accepted intents, and artifact contracts from the local ecosystem.
-- **Workflow Orchestration**: Determining if a task requires a single specialist or a multi-phase pipeline.
-- **Conflict Resolution**: Choosing between overlapping skills based on specificity, risk, and historical performance.
-- **Contract Routing**: Matching the current step by intent, artifact shape, stack fit, and write-risk allowance rather than hardcoded sibling references.
+## Tasks
 
-## Dispatch Contract
+### Show usage / regenerate the wallboard
 
-Treat this routing packet as the canonical handoff contract between orchestrator skills and the dispatcher.
-
-### Required input fields
-
-- `intent`: normalized name for the current substep such as `design_confirmation_tests` or `render_test_artifact`
-- `current_artifact_type`: the artifact already available, such as `bug_report`, `normalized_test_case`, or `repo_context`
-- `target_artifact_type`: the artifact expected from the next skill
-- `repo_context`: stack evidence, repository conventions, and nearby signals such as config files or imports
-- `constraints`: policy or delivery constraints such as "artifact-only", "no writes", or "must stay in repo-native stack"
-- `preferred_stack`: the framework already selected when known
-- `allowed_write_risk`: `low`, `medium`, or `high`
-
-### Required output fields
-
-- `decision`: `HANDOFF`, `SEQUENCE`, or `NO_MATCH`
-- `selected_skill`: best-fit skill for `HANDOFF`, or the first skill for `SEQUENCE`
-- `reason`: concise explanation grounded in registry evidence and policy
-- `handoff_payload`: the exact packet to pass to the selected skill
-
-When the task genuinely needs two phases, return a `SEQUENCE` with a primary and secondary skill in the handoff payload. Do not create longer chains unless policy explicitly requires them.
-
-When encoding dispatcher-specific metadata inside a `SKILL.md`, keep it under the standard `metadata:` block with namespaced keys such as `dispatcher-capabilities` or `dispatcher-accepted-intents`.
-
-If a specialist skill commonly orchestrates other skills after it receives a single `HANDOFF`, that composition may be declared with `dispatcher-downstream-skills` or supplied externally by the dispatcher in `config/skill_relationships.json`. Prefer the config overlay when the skill must remain architecture-agnostic. Treat both as declarative architecture metadata, not runtime proof that every listed downstream skill executed in the current session.
-
-## Workflow
-
-1.  **Usage Logging (MANDATORY)**:
-    - Check `config/settings.json`. If `logging_enabled` is `true`, **YOU MUST** run this command before providing your final answer:
-      `./log-dispatch.cmd --skill <selected_skill> --intent <intent> --model <model_name> --reason <reason>` (or `./log-dispatch.sh` on Linux)
-    - For `SEQUENCE`, include the full ordered chain with `--skills "<primary-skill>, <secondary-skill>"` so every used skill remains fresh in telemetry and staleness audits.
-    - `SEQUENCE` telemetry is invalid without `--skills`; the logger will reject it.
-    - **MANDATORY TOOL SEQUENCING**: This command MUST be either the single tool call in the turn, or the **VERY FIRST tool call** in a sequence of tool calls. Never perform specialized work (writing files, running tests) in a turn where a dispatch log is promised but not yet executed.
-    - This ensures the [wallboard.html](reports/wallboard.html) is refreshed and usage analytics are accurate.
-2.  **Registry Refresh**:
-    Run `python scripts/build_registry.py` if you suspect the ecosystem has changed or new skills were added.
-3.  **Capability & Policy Analysis**:
-    - **Registry Location**: If running in an installed context (`~/.agents`), the registry is located in the **Safe Zone**: `~/.agents/dispatcher-data/registry/SKILL_REGISTRY.json`. Otherwise, look in the local `registry/` folder.
-    - Consult `SKILL_REGISTRY.json` as the machine-readable source of truth.
-    - Use `SKILL_REGISTRY.md` for quick human inspection and auditing.
-    - Review `registry/DISPATCH_POLICY.md` for prioritized routing heuristics. (Policy files remain in the installation folder).
-    - **Bootstrap Step (MANDATORY when `shared-memory` is installed, recommended otherwise)**:
-      ```
-      python scripts/dispatch_bootstrap.py --topic RoutingPolicies --format json
-      ```
-      This is the one command agents must run before complex routing. It loads repo-local project memory first, overlays shared-memory defaults second, and automatically emits a `POLICY_CONSULT` telemetry event. Skip only for simple single-HANDOFF decisions to `risk: low` skills where shared-memory is not installed.
-    - **Bootstrap Artifact**: Treat `DISPATCH_BOOTSTRAP.json` / `DISPATCH_BOOTSTRAP.md` as the reusable policy context for the current routing pass — do not re-check project memory or shared memory separately after running bootstrap.
-    - **Shared Memory Policy**: The `shared-memory` skill is a data source consulted by bootstrap, not a work handler. Do not route work to it — let bootstrap read it automatically.
-4.  **Candidate Shortlist (REQUIRED)**: Run `match_candidates.py` to get a metadata-grounded shortlist before deciding. This anchors your decision in real `dispatcher-*` fields rather than free-form scanning all 78 skills.
-    ```
-    python scripts/match_candidates.py --intent <normalized_intent> [--keywords k1,k2] [--stack s1,s2] [--max-risk medium] --format json
-    ```
-    The output is a top-5 list with per-field score breakdowns. **Pick from the shortlist** unless you have a clear contextual reason to override (recent IDE state, explicit user preference, conversation history). If you override, log it with `--reason "override: <why>"` so the routing audit trail captures the exception.
-
-5.  **Heuristic Evaluation** (apply when comparing within the shortlist):
-    - **Capability First**: The shortlist is already sorted by `accepted_intents` > `capabilities` > category. Top score wins unless other heuristics push otherwise.
-    - **Artifact Compatibility**: Ensure `current_artifact_type` can feed the skill and the skill can produce `target_artifact_type`.
-    - **State Alignment**: Ensure the skill's `writes_files` and `risk` flags align with the user's current environment state.
-    - **Repo-Native Stack Preference**: Prefer a repository-native stack over an organization default when the repository already shows clear evidence.
-    - **Logical Flow**: If a task requires analysis _before_ implementation, prepare a `SEQUENCE`.
-    - **Context-First (Phase 0)**: For high-risk execution tasks or `SEQUENCE` decisions, prepend a context-loading step per §12 of `DISPATCH_POLICY.md`. Prefer `personal-context-portfolio` or `codebase-context` as Phase 0.
-    - **Layer-Aware Selection**: When resolving conflicts between skills that share the same intent, use the `layer` field (§13) to prefer feedback skills for review intents and execution skills for generative intents.
-    - **Lifecycle Check**: Skip `archived` skills entirely. Warn on `sunset` skills per §14.
-
-6.  **Audit-Trail Logging**: When you log the dispatch event, include the matched fields and score from the shortlist so the wallboard can audit how often metadata actually drove the decision:
-    ```
-    log-dispatch.cmd --skill <picked> --intent <intent> --reason <why> \
-                     --matched-fields "accepted_intents,capabilities,stack_tags" \
-                     --match-score 24.0
-    ```
-7.  **Memory & Promotion**:
-    - Consult project-local routing memory through `python scripts/project_memory.py` for repo-specific trends and policies.
-    - **Promotion**: If a routing decision proves exceptionally stable or identifies a new cross-project policy, prefer `python <shared-memory>/scripts/manage_memory.py promote ...` instead of ad-hoc remembering. Do not promote repo-local routes.
-
-## Decision Matrix
-
-| User Intent                      | Context Clarity | Recommended Decision           |
-| :------------------------------- | :-------------- | :----------------------------- |
-| Single, clear specialist task    | High            | `HANDOFF`                      |
-| Multi-phase (Analyze + Build)    | High            | `SEQUENCE`                     |
-| Ambiguous or Multi-skill overlap | Medium          | `SEQUENCE` (Phase 1: Analysis) |
-| Out of scope for all skills      | Low             | `NO_MATCH`                     |
-
-## Output Format
-
-Your response must be a clean, structured routing packet. **No conversational filler.**
-
-```text
-Decision: <HANDOFF | SEQUENCE | NO_MATCH>
-
-Selected skill: <skill-name or "none">
-Secondary skill: <skill-name or "none">
-
-Telemetry Status:
-- [Log Status] <"Logged successfully" | "Logging disabled in config">
-- [Command] `./log-dispatch.cmd --skill <skill> [--skills "<skill>, <secondary-skill>"] --intent <intent> --reason <reason> --decision <HANDOFF|SEQUENCE>`
-
-Architectural Reasoning:
-- [Intent] <brief analysis of what the user wants>
-- [Mapping] <why the selected skill(s) are the best fit based on intent, capabilities, artifact fit, and stack evidence>
-- [Risk] <assessment of destructive potential vs. user safety>
-
-Handoff Payload:
-- intent: <precise normalized step name>
-- current_artifact_type: <artifact currently available>
-- target_artifact_type: <artifact required from the next skill>
-- repo_context: <exact file paths or context snippets to pass>
-- constraints: <specific boundaries, style guides, or technical limits>
-- preferred_stack: <stack when known, otherwise "none">
-- allowed_write_risk: <low | medium | high>
-- deliverable: <what the next skill MUST produce to satisfy the user>
+```
+python scripts/generate_wallboard.py
 ```
 
-## 6. Skill Metadata Schema
+Reads the usage log and writes the wallboard: totals, most-used skills, models, recent activity, chains and staleness. Point the user to `file:///<home>/.agents/dispatcher-data/reports/wallboard.html`. For a quick answer without the page, read the log directly: rows written by hooks have `intent` = `skill used (via <harness> hook)`.
 
-To Ensure precise routing and lifecycle management, all skills in the harness should adhere to this metadata schema within their `SKILL.md` frontmatter. Use namespaced keys prefixed with `dispatcher-`.
+### Rebuild the skill registry
 
-### 6.1 Architectural Layer (`dispatcher-layer`)
+```
+python scripts/build_registry.py
+```
 
-Defines the skill's primary behavioral mode.
+Indexes every installed SKILL.md (name, description, `dispatcher-*` metadata) into the registry. Its preflight also reports name drift and oversized frontmatter. Rebuild after installing, removing or renaming skills.
 
-| Value         | Role       | Description                                                                                                                           |
-| :------------ | :--------- | :------------------------------------------------------------------------------------------------------------------------------------ |
-| `information` | **Eyes**   | Read-only, context-loading, or research skills. Example: `codebase-context`, `get-api-docs`.                                          |
-| `execution`   | **Hands**  | Generative skills that modify the workspace or implement logic. Example: `angular-developer`, `stitch-design`.                        |
-| `feedback`    | **Safety** | Analytical skills that review, audit, verify, or score artifacts. Example: `defensive-appsec-review-skill`, `tss-test-case-reviewer`. |
+### Staleness audit
 
-### 6.2 Lifecycle Status (`dispatcher-lifecycle`)
+```
+python scripts/staleness_audit.py --days 90
+```
 
-Governs the skill's availability and maintenance status.
+Lists installed skills with no logged use in the lookback window. Treat the result as a prompt for a decision (keep, make on-demand, archive), not as a verdict: a skill that was installed recently, or that is loaded in a harness without hooks, can look unused.
 
-- **`active`**: Fully supported and maintained. The default status.
-- **`sunset`**: Deprecated. Use is allowed but discouraged. The dispatcher will warn during selection.
-- **`archived`**: No longer usable. The dispatcher will ignore this skill and return `NO_MATCH` if no active candidates exist.
+### Recommend a skill (only when asked)
 
----
+When the user explicitly asks which skill should handle a task:
 
-## Guardrails & Anti-Patterns
+```
+python scripts/match_candidates.py --intent <normalized_intent> [--keywords k1,k2] [--stack s1,s2] [--max-risk medium] --format text
+```
 
-- **NEVER** perform the specialized work yourself. Your value is in the decision, not the execution.
-- **NEVER** guess. If the registry doesn't contain a clear match, return `NO_MATCH`.
-- **LIMIT SEQUENCES**: Do not suggest sequences longer than two skills unless explicitly necessary for a complex pipeline.
-- **PREFER SAFETY**: When in doubt, route to an analytical or read-only skill first.
-- **VERIFY PATHS**: Ensure any files passed in the "Handoff Payload" actually exist in the current workspace.
-- **NO HARDCODED ECOSYSTEM COUPLING**: Prefer capability-based discovery over direct references to sibling skill paths. Direct paths are a fallback only.
-- **ATOMIC DISPATCH**: Always include the `log-dispatch.cmd` command as the **VERY FIRST** tool call in the turn where a dispatch decision is made. Never perform implementation tool calls (like `write_to_file` or `run_command`) in a turn that _promises_ a log but doesn't _execute_ it.
+Answer with the top candidate, the runner-up, and one line on why, grounded in the matched metadata fields. Do not perform the task yourself as part of the recommendation, and do not route tasks the user did not ask to have routed: harnesses already pick skills from their descriptions.
+
+## Logging
+
+Nothing to do. The hooks call `scripts/dispatch_logger.py` for every skill use in Claude Code, Codex, Grok and Antigravity (Copilot and Hermes are supported once registered). Do not run `log-dispatch` for normal skill use; it remains available for manual or scripted events only.
+
+## Skill metadata schema
+
+`build_registry.py` and `match_candidates.py` read these namespaced keys from each skill's `metadata:` block:
+
+| Key | Meaning |
+|---|---|
+| `dispatcher-category`, `dispatcher-capabilities`, `dispatcher-accepted-intents` | What the skill does, as matchable terms |
+| `dispatcher-input-artifacts`, `dispatcher-output-artifacts` | What it consumes and produces |
+| `dispatcher-stack-tags` | Technologies it covers |
+| `dispatcher-risk`, `dispatcher-writes-files` | How careful a caller must be |
+| `dispatcher-layer` | `information` (reads), `execution` (changes things) or `feedback` (reviews) |
+| `dispatcher-lifecycle` | `active`, `sunset` (warn) or `archived` (ignore) |
+
+Keep list values on one line (`a, b, c`); keep everything else in the body of the SKILL.md.

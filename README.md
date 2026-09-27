@@ -1,418 +1,131 @@
-# 🚦 Skill Dispatcher
+# Skill Dispatcher
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-3.1.0-orange.svg)](https://github.com/jovd83/skill-dispatcher)
-[![AgentSkills Standard](https://img.shields.io/badge/AgentSkills-Standard-green.svg)](https://agentskills.io)
+[![version](https://img.shields.io/badge/version-4.0.0-blue)](CHANGELOG.md)
+[![status](https://img.shields.io/badge/status-stable-3fb950)](SKILL.md)
+[![category](https://img.shields.io/badge/category-analysis-0a7ea4)](SKILL.md)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jovd83)
 
-**Skill Dispatcher** is a high-performance routing and orchestration layer for AI Agent ecosystems. It utilizes a **Contract-Driven Routing** architecture to dynamically discover, classify, and sequence specialized AgentSkills, ensuring every task is handled by the most qualified capability.
+`skill-dispatcher` is the usage-analytics layer for a large AgentSkill library: harness hooks log every skill use, and the skill turns that log into a wallboard, a registry and a staleness report.
 
-## 🚀 The Problem
+## What This Skill Does
 
-As an agent's skill library grows, "Skill Overload" occurs:
--   **Ambiguity**: Multiple skills (e.g., `bash-executor`, `python-executor`) may overlap.
--   **Inefficiency**: Routing to a broad generalist when a specialist is available.
--   **Risk**: Accidentally invoking write-heavy skills during an analysis phase.
+Up to 3.x the dispatcher tried to sit in front of every task. Every SKILL.md carried a notice telling the model to run `log-dispatch` first, and the dispatcher itself routed work after consulting shared memory. Models skipped the logging, every run paid for an extra tool call, and the routing duplicated what the harnesses already do from skill descriptions.
 
-## ✨ The Solution (v3.1.0)
+4.0.0 keeps the part that worked, the usage data, and makes collecting it deterministic. Each harness calls `hooks/skill_usage_hook.py` on its own lifecycle events. The hook recognises a skill use (the skill tool, a read of an installed SKILL.md, or an explicit `/skill`), and writes the event through `scripts/dispatch_logger.py`. It is live-proven in Claude Code, OpenAI Codex, xAI Grok and Google Antigravity, and supports GitHub Copilot and Hermes Agent.
 
-The **Skill Dispatcher** solves this by acting as a strategic traffic controller:
-1.  **Contract-Driven Routing**: Matches by `intent`, `artifact_type`, repo-native `stack`, and `risk` allowance rather than keyword guessing.
-2.  **Dynamic Discovery**: Scans local (`./skills`), global (`~/.agents/skills`), and environment-defined (`SKILL_DISPATCH_EXTRA_DIRS`) directories.
-3.  **Registry v2.0**: Robustly indexes skill metadata into machine-readable `SKILL_REGISTRY.json` for deterministic selection.
-4.  **Workflow Orchestration**: Automatically decides between `HANDOFF`, `SEQUENCE` (multi-phase flow), or `NO_MATCH`.
-5.  **Shared Memory Integration**: Loads project-local routing memory first, then shared-memory defaults with confidence and freshness gates, and supports promoting stable routing policies to `shared-memory` for global consistency.
+On top of that log the skill:
 
-## Chain Automation (latest)
+- regenerates the **wallboard** (`generate_wallboard.py`): totals, most-used skills, models, recent activity, chains, staleness;
+- rebuilds the **skill registry** (`build_registry.py`) from every installed SKILL.md, flagging name drift and oversized frontmatter;
+- runs the **staleness audit** (`staleness_audit.py`) to find skills nobody uses any more;
+- **recommends a skill** from registry metadata (`match_candidates.py`), but only when someone asks.
 
-The dispatcher now detects and proposes chain definitions automatically:
+## What This Skill Does Not Do
 
-- **Chain candidate detection** (`build_registry.py`): skills with `risk: high` and multi-phase workflow descriptions are flagged as `missing_chain_definition` in `registry_health.json` during every `--preflight` run.
-- **`propose_chains.py`** (new): reads flagged candidates, calls the Anthropic API (using `SKILL_DISPATCH_MODEL` / `AGENT_MODEL` from the calling agent's environment), and writes draft `chain_definition.json` files to `~/.agents/dispatcher-data/chain_proposals/<skill>/`. Each draft ships with a `REVIEW.md` checklist and the exact `cp` command to approve and promote it. Auto-spawned non-blocking after every registry rebuild when candidates exist.
-- **`dispatch_logger.py`**: `chain_id` is now auto-generated (UUID) when `--chain-id` is not passed, so every event has a correlation ID. `policy_lookup.applied` now emits `null` (unknown) instead of `false` when using auto-lookup — distinguishes "we don't know" from "definitely not applied".
-- **`executable_skills.json`**: 7 new skills added (`retro-board-creator`, `shownote-creator`, `claymotion-*`, `sketchy-slides`, `here-now`, `imagegen`); 3 name-drift entries corrected (`react:components` → `react-components`, `functional-analysis-meta-skill` → `FunctionalAnalysisMetaSkill-skill`, `testing-meta-skill` → `TestingMetaSkill-skill`).
-- **Name-drift preflight check** (`build_registry.py`): flags skills where the SKILL.md `name:` field doesn't match the install directory name, preventing silent routing failures.
+- **It does not route every task.** Harnesses pick skills from their descriptions; the dispatcher only recommends when explicitly asked. The skill sets `disable-model-invocation: true`, so Claude Code never loads it on its own.
+- **It does not ask models to log anything.** Logging is the hooks' job. `log-dispatch` remains for manual or scripted events only.
+- **It does not read or write shared memory.** The automatic `RoutingPolicies` lookup in the logger was removed in 4.0.0, together with the shared-memory skill it depended on.
+- **It does not inject anything into other skills.** `skill_md_telemetry_notice.py --add-paragraph` is retired; use `--remove-paragraph` or the rework's `strip_notices.py` to clean up old installs.
+- **It is not a sync tool.** `scripts/sync_skills_to_agents.py` is superseded by a manifest-driven sync that copies whole skill folders.
 
-## New Capabilities In This Sync
+## When To Use It
 
-This source repository now contains a stronger policy-aware routing layer so agents no longer need to "remember" that memory exists as a separate concern:
+Use it when:
 
-- **Canonical Bootstrap Wrapper**: `scripts/dispatch_bootstrap.py` is now the one command an agent should call before complex routing. It gathers policy context, emits a reusable bootstrap note, and exposes logger-ready fields.
-- **Bootstrap Artifacts**: the dispatcher can now produce `DISPATCH_BOOTSTRAP.json` and `DISPATCH_BOOTSTRAP.md`, which give later agents a single canonical routing context artifact instead of forcing them to re-check memory layers independently.
-- **Project Memory Lane**: `scripts/project_memory.py` gives repository-specific routing rules a proper local home so repo conventions do not leak into shared memory.
-- **Structured Shared Policy Lookup**: `scripts/check_shared_policy.py` and `scripts/prepare_dispatch_context.py` now return explicit `hit` / `miss` / `error` outcomes with confidence and freshness gates.
-- **Policy Telemetry**: `dispatch_logger.py` and the wallboard now track whether policy was consulted, where it came from, how many hits were returned, and whether policy changed the routing decision.
-- **Promotion Suggestions**: `scripts/suggest_routing_promotions.py` can mine dispatcher logs for repeated routing patterns and turn them into concrete promotion candidates for shared memory.
+- someone asks which skills are used, how often, by which model or in which harness;
+- the wallboard needs regenerating, or the registry after installing, removing or renaming skills;
+- you are deciding which skills to archive or make on-demand (staleness audit);
+- someone explicitly asks which skill should handle a task.
 
-The practical effect is that routing policy is now discoverable through one bootstrap path, locally overridable through project memory, globally extensible through shared memory, and visible in telemetry instead of being hidden tribal knowledge.
+To add or debug usage logging for a harness, read `hooks/README.md`: that is configuration, not something the skill does at run time.
 
-## 📋 Registry Contract v2.0
+## Repository Layout
 
-The dispatcher enforces a standardized interface for all skills in the ecosystem.
-
-### Routing Inputs
-- `intent`: Normalized goal (e.g., `design_confirmation_tests`).
-- `current_artifact_type`: Artifact currently available (e.g., `repo_context`).
-- `target_artifact_type`: Artifact expected from the next skill.
-- `repo_context`: Stack evidence and repository conventions.
-- `allowed_write_risk`: `low`, `medium`, or `high`.
-
-### Dispatch Decisions
-- **HANDOFF**: Single specialist match for a clear task.
-- **SEQUENCE**: Multi-phase workflow (e.g., Analysis -> Implementation).
-- **NO_MATCH**: Safe fallback with "Skill Gap" identification when no match meets the 80% quality bar.
-
-## 📁 Repository Structure
-
-```text
+```
 skill-dispatcher/
-├── pyproject.toml         # Project metadata
-├── LICENSE                # MIT License
-├── SKILL.md               # v2.0 Contract definition & Instructions
-├── README.md              # Detailed documentation
-├── dispatch.cmd / .sh     # Unified CLI wrapper (calls scripts/dispatch_cli.py)
-├── build-registry.cmd/.sh # Wrapper for scripts/build_registry.py
-├── log-dispatch.cmd/.sh   # Wrapper for scripts/dispatch_logger.py
-├── generate-wallboard.*   # Wrapper for scripts/generate_wallboard.py
-├── check-setup.cmd/.sh    # Environment sanity check
-├── scripts/               # Discovery, routing & utility engine
-├── registry/              # Routing source of truth (SKILL_REGISTRY.json, DISPATCH_POLICY.md)
-├── config/                # Local settings, enrichments, skill_relationships overlay
-├── logs/                  # Usage history (dispatch_events.jsonl)
-├── reports/               # Visual dashboards (wallboard.html)
-├── evals/                 # Performance benchmarks
-├── tests/                 # Quality assurance
-├── examples/              # Sample dispatch packets
-├── screenshots/           # README assets
-└── scratch/               # Working notes / transient artifacts
+├── SKILL.md                       # the analytics skill (4.0.0)
+├── hooks/
+│   ├── skill_usage_hook.py        # one hook script for every harness
+│   ├── README.md                  # per-harness registration and payload notes
+│   └── tests/                     # synthetic payloads in each harness's format
+├── scripts/
+│   ├── dispatch_logger.py         # writes one event to dispatch_events.jsonl
+│   ├── generate_wallboard.py      # usage log -> wallboard.html
+│   ├── build_registry.py          # installed skills -> SKILL_REGISTRY.json/.md
+│   ├── staleness_audit.py         # skills without recent use
+│   ├── match_candidates.py        # metadata-scored skill recommendation
+│   └── ...                        # legacy routing and shared-memory scripts, see CHANGELOG
+├── config/                        # settings.json, skill relationships, enrichments
+├── registry/                      # registry output when run from the repo
+├── log-dispatch.cmd / .sh         # manual logging wrapper
+├── generate-wallboard.cmd / .sh   # wallboard wrapper
+├── build-registry.cmd / .sh       # registry wrapper
+├── check-setup.cmd / .sh          # environment diagnostics
+├── evals/evals.json
+└── tests/                         # logger, registry, wallboard and matcher tests
 ```
 
-## 🛠️ Getting Started
-
-### 1. Installation
-
-You can install this skill locally or from a GitHub repository:
-
-**Local Installation:**
-```bash
-npx skills add C:\projects\skills\Skill-dispatcher --skill skill-dispatcher
-```
-
-**GitHub Installation:**
-```bash
-npx skills add <username>/skill-dispatcher --skill skill-dispatcher
-```
-
-### 2. Initial Setup (Mandatory)
-
-Before your first use, you **must** build the initial skill index. This scans your environment and creates the routing registry:
+## Installation
 
 ```bash
-# 1. Verify your environment (Python version, paths, expected directories)
-./check-setup.sh        # or check-setup.cmd on Windows
-
-# 2. Build the Registry
-python scripts/build_registry.py
-# (or use the wrapper)
-./build-registry.sh     # or build-registry.cmd on Windows
-
-# 3. (Optional) Heuristically enrich missing dispatcher tags from SKILL.md/README content
-python scripts/enrich_metadata_heuristics.py
-
-# 4. (Optional) Add the standard telemetry notice and patch missing dispatcher tags
-python scripts/skill_md_telemetry_notice.py --add-paragraph --patch-missing-tags --write
-
-# 5. (Optional) Bootstrap historical usage from session logs
-python scripts/migrate_past_usage.py
+npx skills add jovd83/skill-dispatcher
 ```
 
-`skill_md_telemetry_notice.py` is the current bulk-edit helper for user-installed skills and defaults to `~/.agents/skills` when you do not pass `--target`. `enforce_telemetry.py` is **deprecated** — only use it if you need the legacy normalization behavior on older portfolios; new work should use `skill_md_telemetry_notice.py`.
-
-### 3. Routing (Day-to-Day)
-
-Once the registry is built, the unified CLI is the entrypoint agents call before each routing decision:
+Manual alternative:
 
 ```bash
-# Default: emit policy bootstrap + scored candidate shortlist for the agent to read
-python scripts/dispatch_cli.py --query "review my UI code"
-
-# Same idea, lower-level: just the candidate shortlist
-python scripts/match_candidates.py --intent review_code --top-n 5 --format json
-
-# Same idea, lower-level: just the policy bootstrap artifact
-python scripts/dispatch_bootstrap.py --topic RoutingPolicies --format json
+git clone https://github.com/jovd83/skill-dispatcher.git
 ```
 
-The agent — not the CLI — owns the final routing decision. `dispatch_cli.py --execute` can invoke a routing decision once the agent has produced one.
+Then place the folder in `~/.agents/skills/skill-dispatcher/`. Python 3.8+ is required; the wallboard and registry use only the standard library.
 
-### 4. Verification
+To collect usage, install the hook once and register it in each harness you use:
 
-Generate your first wallboard to ensure the dispatcher sees your configured environment:
-```bash
-python scripts/generate_wallboard.py
-```
-Open `reports/wallboard.html` to confirm your skill distribution is visible.
+1. Copy `hooks/skill_usage_hook.py` to `~/.agents/dispatcher-data/hooks/`. That location survives skill reinstalls.
+2. Add the registration for each harness from `hooks/README.md`. Every registration runs `py -3 <home>/.agents/dispatcher-data/hooks/skill_usage_hook.py --harness <name>`.
+3. Codex only: approve the hook once in `/hooks`.
 
-## 💡 Improving Dispatcher Knowledge
+## Usage
 
-To ensure the **Skill Dispatcher** correctly routes to your skills, they need metadata. You can provide this in two ways:
+Run the scripts from the installed copy; data is written to `~/.agents/dispatcher-data/`.
 
-### 1. Manual Tagging (Source-First)
-Add `dispatcher-` tags directly to your `SKILL.md` frontmatter. This is the **primary source of truth**.
-- **`dispatcher-layer`**: Defines the architectural layer (e.g., `information`, `execution`, `feedback`). Helps the dispatcher reason about capability context, control-plane sequencing, and verification roles correctly.
-- **`dispatcher-lifecycle`**: Indicates maturity (e.g., `active`, `sunset`, `archived`). Prevents routing to unstable or deprecated skills.
-- **`dispatcher-capabilities`**: What specialized actions can this skill perform? (e.g., `ui-testing`, `api-design`).
-- **`dispatcher-accepted-intents`**: Which specific routing intents does it handle? (e.g., `verify_logic`, `design_ui`).
-- **`dispatcher-input-artifacts`**: What data/files does it consume? (e.g., `user-story`).
-- **`dispatcher-downstream-skills`**: Optional declared sub-skills this specialist may orchestrate internally. This is dependency visibility, not proof that each one ran in a given session.
+| Task | Command |
+|---|---|
+| Regenerate the wallboard | `python scripts/generate_wallboard.py` |
+| Rebuild the registry | `python scripts/build_registry.py` |
+| Staleness audit | `python scripts/staleness_audit.py --days 90` |
+| Recommend a skill | `python scripts/match_candidates.py --intent <intent> --keywords k1,k2 --format text` |
+| Log an event by hand | `log-dispatch.cmd --skill <skill> --intent <intent> --model <model> --reason <reason>` |
 
-For architecture-agnostic skills, prefer the dispatcher-owned overlay file `config/skill_relationships.json` instead of editing the skill itself. That keeps skill packages portable while still letting this repo describe local orchestration knowledge.
+In Claude Code the skill is invoked with `/skill-dispatcher`.
 
-### 2. Semantic AI Enrichment (Manifest-Driven)
-If your skills lack explicit tags, the **Skill Dispatcher** uses an **Autonomous Intelligence Engine** (v3.0+) to infer them.
-- **The Manifest**: AI-suggested tags are stored in `config/skill_enrichments.json`. This allows the Dispatcher to be "expert-ready" immediately without you having to manually edit every skill file in your portfolio.
-- **Merge Logic**: Heuristics strictly follow a **User-First Policy**. Manual tags in `SKILL.md` are **NEVER overwritten**; the AI only fills in empty fields (`[]`).
-- **Improvement Tip**: Ensure your skill has a high-quality natural language **Description**. The more context you provide, the better the AI can infer its capabilities.
+## Output Contract
 
-## 🧠 Memory & Promotion
+Each usage event is one JSON line in `~/.agents/dispatcher-data/logs/dispatch_events.jsonl`:
 
-- **Project Memory Lane**: `scripts/project_memory.py` stores repo-local routing policies and conventions under the repository rather than polluting shared memory.
-- **Canonical Bootstrap**: `scripts/dispatch_bootstrap.py` is the one-step entrypoint that loads project memory first, overlays shared-memory defaults second, and emits a reusable bootstrap note plus logger-ready policy fields.
-- **Shared Policy Lookup**: `scripts/prepare_dispatch_context.py` remains the lower-level structured context builder used underneath the bootstrap step.
-- **Policy Promotion**: Stable routing patterns can be promoted through the `shared-memory` CLI using its assessed `promote` workflow instead of ad-hoc manual remembering.
-
-## 📊 Usage Monitoring
-
-The Skill Dispatcher includes a built-in monitoring system to track skill usage frequency and rationale. It now includes robust wrappers to ensure it works correctly across different Python environments (including Windows).
-
-### Usage (Manual)
-If you need to manually log an event (e.g., when testing a specific skill routing):
-```bash
-# Windows
-.\log-dispatch.cmd --skill <skill> --intent <intent> --model <model> --reason <reason>
-
-# Linux/macOS
-./log-dispatch.sh --skill <skill> --intent <intent> --model <model> --reason <reason>
-```
-
-For `SEQUENCE` decisions, include the full ordered chain so secondary skills are counted in telemetry and staleness reporting:
-
-```bash
-.\log-dispatch.cmd --skill <primary-skill> --skills "<primary-skill>, <secondary-skill>" --intent <intent> --reason <reason> --decision SEQUENCE
-```
-
-`SEQUENCE` logging now fails fast if `--skills` is omitted.
-
-Important: the wallboard shows explicit dispatcher decisions from `logs/dispatch_events.jsonl`. If a specialist skill internally uses other skills after a single `HANDOFF`, those downstream skills are not auto-inferred from telemetry. To make that composition visible in the registry and skill detail views, declare them either in skill metadata or, preferably for repo-specific topology, in `config/skill_relationships.json`.
-
-### Feature Flag
-You can toggle usage logging in `config/settings.json`:
 ```json
-{
-  "logging_enabled": true
-}
-```
-*Note: Logging is enabled by default to provide audit evidence for AI Board reviews.*
-
-### Skill Dispatcher Overview & Wallboard
-To generate a human-readable dashboard and wallboard:
-1. Ensure you have logs in `logs/dispatch_events.jsonl`.
-2. Run the generator:
-   ```bash
-   python scripts/generate_wallboard.py
-   ```
-3. Open `reports/wallboard.html` in your browser.
-
-**1. The overview of used agentskills**
-![Skill Dispatcher Overview](screenshots/skilldispatcher_overview.png)
-
-**2. The wallboard of used agentskills**
-![Skill Wallboard](screenshots/skilldispatcher_wallboard.png)
-
-**3. The details for one specific agentskill**
-![Skill Detail View](screenshots/skilldispatcher_detail.png)
-
-#### How it works
-
-1. **Where does the info come from?**
-The wallboard reads all its data from the `logs/dispatch_events.jsonl` file. This is a secure, local-only append-only log that stores every architectural decision.
-
-2. **Is it auto-updated?**
-**Yes!** We've implemented two layers of automation:
-- **Auto-Generation**: Every time a skill is called (and logging is enabled), the `dispatch_logger.py` script automatically triggers the generator to update `reports/wallboard.html`.
-- **Auto-Refresh**: The HTML file includes a 30-second "heartbeat".
-
-### Bootstrapping History
-If you are turning this on for the first time and want to capture past usage from your session logs, run the migration script:
-```bash
-python scripts/migrate_past_usage.py
+{"timestamp": "2026-09-27T13:44:37.733579", "selected_skill": "booklet-droodle",
+ "skills_used": ["booklet-droodle"], "intent": "skill used (via antigravity hook)",
+ "reason": "hook:antigravity PostToolUse: view_file read SKILL.md", "decision": "HANDOFF",
+ "chain_id": "antigr-4efd4105", "model": "gemini-3.7-flash-high"}
 ```
 
-## 🛠️ Toolkit & Scripts
+Hook events always have `intent` = `skill used (via <harness> hook)`. No prompts, file contents or tool output are logged.
 
-The Skill Dispatcher includes a suite of utility scripts to manage your skill portfolio and analyze usage.
-
-| Script | Purpose | When to Use | How to Use |
-| :--- | :--- | :--- | :--- |
-| `dispatch_cli.py` | **Unified CLI entry point.** Combines `dispatch_bootstrap.py` + `match_candidates.py` into one packet for the agent to read; can also `--execute` an already-decided routing decision. | The default entrypoint agents should call before each routing decision. | `python scripts/dispatch_cli.py --query "<task>" [--intent <name>]` |
-| `match_candidates.py` | **REQUIRED in dispatch workflow.** Scores skills against a routing intent using registry metadata; emits a top-N shortlist with per-field score breakdowns. | Before deciding a `HANDOFF`/`SEQUENCE`, to anchor the choice in real `dispatcher-*` fields. | `python scripts/match_candidates.py --intent <intent> [--keywords k1,k2] [--stack s1,s2] [--max-risk medium] --format json` |
-| `build_registry.py` | Scans for `SKILL.md` files and compiles the registry. | After adding or modifying skill metadata. | `python scripts/build_registry.py` |
-| `dispatch_logger.py` | Records skill invocation events for auditing. | Automatically via `log-dispatch.cmd`. | `python scripts/dispatch_logger.py --skill <name> [--skills "skill-a, skill-b"] ...` |
-| `generate_wallboard.py` | Generates the HTML analytics dashboard. | To force-refresh the dashboard. | `python scripts/generate_wallboard.py` |
-| `dispatch_bootstrap.py` | Generates the canonical dispatcher bootstrap artifact so agents do not have to remember project-memory and shared-memory separately. | Before complex routing when you want one policy-aware bootstrap step (also invoked via `dispatch_cli.py`). | `python scripts/dispatch_bootstrap.py` |
-| `prepare_dispatch_context.py` | Loads project memory first, overlays shared-memory defaults second, and emits logger-ready policy telemetry fields. | Lower-level structured context builder used underneath `dispatch_bootstrap.py`. | `python scripts/prepare_dispatch_context.py` |
-| `check_shared_policy.py` | Reads shared-memory routing policies with freshness and confidence gates. | When you need shared defaults only. | `python scripts/check_shared_policy.py` |
-| `project_memory.py` | Manages repo-local routing memory so project conventions stay local. | When a routing fact belongs to one repository only. | `python scripts/project_memory.py <command>` |
-| `suggest_routing_promotions.py` | Scans dispatcher logs for repeated routing patterns and emits shared-memory promotion candidates. | When you want evidence-backed policy suggestions instead of manual remembering. | `python scripts/suggest_routing_promotions.py` |
-| `skill_md_telemetry_notice.py` | Adds/removes the telemetry paragraph and patches missing dispatcher tags. **Canonical tool.** | Bulk-update `SKILL.md` files under `~/.agents/skills`. | `python scripts/skill_md_telemetry_notice.py --add-paragraph [--patch-missing-tags] [--write]` |
-| `enrich_metadata_heuristics.py` | Heuristically infers missing dispatcher tags by scanning `SKILL.md` and `README.md` (stack/capability/artifact keywords). | Initial portfolio bootstrap, before manually tagging each skill. | `python scripts/enrich_metadata_heuristics.py` |
-| `migrate_metadata_to_source.py` | Injects inferred tags into `SKILL.md` files. | To promote AI-suggested tags to source. | `python scripts/migrate_metadata_to_source.py [--no-dry-run]` |
-| `migrate_past_usage.py` | Recovers events from session history. | When bootstrapping a new environment. | `python scripts/migrate_past_usage.py [--sample]` |
-| `staleness_audit.py` | Identifies underused or obsolete skills. | During maintenance to prune your portfolio. | `python scripts/staleness_audit.py [--days 90]` |
-| `sync_skills_to_agents.py` | Copies `SKILL.md` files from a development/projects directory into the installed agents directory. | When you maintain skills in a separate dev tree and want to publish updates into `~/.agents/skills`. | `python scripts/sync_skills_to_agents.py <source_root> <target_root>` |
-| `portfolio_push_sync.py` | Sweeps your skills root for git repos with unsaved changes and pushes them. Skips folders without an active remote. | After a multi-skill editing session, to publish all updated skill repos at once. | `python scripts/portfolio_push_sync.py <root_dir>` |
-| ~~`enforce_telemetry.py`~~ | **Deprecated** — use `skill_md_telemetry_notice.py`. Kept for backwards compatibility only. | — | — |
-
-### `skill_md_telemetry_notice.py`
-
-This script scans a skills root, defaults to `~/.agents/skills`, and updates every `SKILL.md` file it finds. It runs as a dry run unless you pass `--write`. During a dry run it prints `[would save]` for each matching file, and during a live run it prints `[saved]` for each file it updates.
-
-The actions are independent, so you can run one or combine them:
-
-- `--add-paragraph`: add the hardened telemetry paragraph when no current dispatcher telemetry notice exists
-- `--remove-paragraph`: remove the dispatcher telemetry paragraph
-- `--patch-missing-tags`: add missing dispatcher tags in frontmatter
-- `--target <path>`: search a different skills root instead of `~/.agents/skills`
-- `--enrichments <path>`: use a different enrichment manifest for tag patching
-- `--write`: persist changes to disk
-
-Examples:
+## Validation
 
 ```bash
-# Preview paragraph insertion in ~/.agents/skills
-python scripts/skill_md_telemetry_notice.py --add-paragraph
-
-# Insert the paragraph and save files
-python scripts/skill_md_telemetry_notice.py --add-paragraph --write
-
-# Remove the paragraph and save files
-python scripts/skill_md_telemetry_notice.py --remove-paragraph --write
-
-# Patch missing dispatcher tags only
-python scripts/skill_md_telemetry_notice.py --patch-missing-tags --write
-
-# Add the paragraph and patch tags in one run
-python scripts/skill_md_telemetry_notice.py --add-paragraph --patch-missing-tags --write
+py -3 -m pytest -q tests                                  # logger, registry, wallboard, matcher
+cd hooks && py -3 -m unittest tests.test_skill_usage_hook # hook payloads for every harness
 ```
 
-The exact paragraph added by `--add-paragraph` is:
+The hook tests feed each harness's real payload format through the hook with a stub logger, including invalid UTF-8, garbage input, dev-tree reads that must *not* count, and unknown skills that must be ignored.
 
-```md
-## Telemetry & Logging
+## Contributing
 
-> [!IMPORTANT]
-> **CRITICAL TELEMETRY REQUIREMENT**: Every execution of this skill MUST be logged immediately. Omitting this step violates the system's audit integrity policy.
-> Run: `%USERPROFILE%\.agents\skills\skill-dispatcher\log-dispatch.cmd --skill <skill-folder-name> --intent <intent> --model <model_name> --reason <reason>`
-```
+Edit in this repository, then sync the folder to `~/.agents/skills/skill-dispatcher/`, and copy `hooks/skill_usage_hook.py` to `~/.agents/dispatcher-data/hooks/`. The installed copies are downstream and should never be edited directly.
 
-If a `SKILL.md` already contains a current dispatcher telemetry notice with `log-dispatch.cmd`, `--add-paragraph` leaves it unchanged. This preserves already-hardened notices, including skill-specific `--skill` names and prefilled `--intent` values. If an older telemetry notice is present, the script replaces only that `## Telemetry & Logging` block and stops before the next Markdown heading, including top-level `# Title` headings.
+## License
 
-The exact paragraph removed by `--remove-paragraph` is the detected `## Telemetry & Logging` block. The removal pattern is heading-safe: it only removes the telemetry blockquote content and preserves the next Markdown heading and body section.
-
-When `--patch-missing-tags` is used, the script only fills in missing dispatcher tags. It does not overwrite existing values. By default it reads `config/skill_enrichments.json` to infer values for missing keys, and it can add:
-
-- `dispatcher-category`
-- `dispatcher-layer`
-- `dispatcher-lifecycle`
-- `dispatcher-risk`
-- `dispatcher-writes-files`
-- `dispatcher-capabilities`
-- `dispatcher-accepted-intents`
-- `dispatcher-input-artifacts`
-- `dispatcher-output-artifacts`
-- `dispatcher-stack-tags`
-- `dispatcher-persistent-directories`
-
-Frontmatter detection is tolerant of Windows CRLF line endings and UTF-8 BOMs. If a `SKILL.md` file has no frontmatter, paragraph operations still work, but tag patching is skipped for that file.
-
-## ⚖️ Core Policies
-
-Our policies prioritize **Specificity over Breadth** and **Security over Speed**. 
--   **Specificity Rule**: Always prefer a niche specialist (e.g., `react-tester`) over a generalist.
--   **Risk Alignment**: Ensures skill write-access matches the current task phase.
--   **Stack Preference**: Favors repository-native tools over global defaults.
-
-For more details, see [DISPATCH_POLICY.md](registry/DISPATCH_POLICY.md).
-
-## 📐 Frontmatter Contract
-
-Agent platforms enforce a **1,000-character limit** on SKILL.md frontmatter. Exceeding this causes preloading failures and context overflow. All skills in the ecosystem must comply.
-
-### What belongs in frontmatter (dispatcher reads these)
-
-| Field | Type | Notes |
-|:------|:-----|:------|
-| `name` | string | Exact skill identifier |
-| `description` | string | Max ~300 chars — the dispatcher uses this for matching |
-| `metadata.dispatcher-category` | string | Single value: `analysis`, `testing`, `implementation`, `infrastructure`, `orchestration` |
-| `metadata.dispatcher-capabilities` | inline CSV | e.g., `foo, bar, baz` — **not** a vertical list |
-| `metadata.dispatcher-accepted-intents` | inline CSV | Normalized intent names |
-| `metadata.dispatcher-input-artifacts` | inline CSV | Artifact types this skill consumes |
-| `metadata.dispatcher-output-artifacts` | inline CSV | Artifact types this skill produces |
-| `metadata.dispatcher-stack-tags` | inline CSV | Framework/toolchain tags |
-| `metadata.dispatcher-risk` | string | `low`, `medium`, or `high` |
-| `metadata.dispatcher-writes-files` | boolean | `true` or `false` |
-| `metadata.dispatcher-layer` | string | `information`, `execution`, or `feedback` |
-| `metadata.dispatcher-lifecycle` | string | `active`, `sunset`, or `archived` |
-| `metadata.dispatcher-downstream-skills` | inline CSV | Optional declared sub-skills |
-| `metadata.dispatcher-preferred-model` | string | Optional. Anthropic model ID the orchestrator should use when invoking this skill (e.g. `claude-haiku-4-5-20251001` for cheap utilities, `claude-opus-4-7` for heavy reasoning). User `--model` flag always overrides. |
-
-### What belongs in the body (not in frontmatter)
-
-Move these to a `> **Author:** ... | **Version:** ...` header line at the top of the body:
-
-`license`, `author`, `version`, `maturity`, `compatibility`, `homepage`, `platforms`
-
-### List format rule
-
-All `dispatcher-*` list values **must be inline CSV** — never vertical YAML lists:
-
-```yaml
-# CORRECT
-metadata:
-  dispatcher-capabilities: foo, bar, baz
-
-# WRONG — bloats frontmatter, may break the preloader
-metadata:
-  dispatcher-capabilities:
-    - foo
-    - bar
-    - baz
-```
-
-### Choosing `dispatcher-preferred-model`
-
-Pick the cheapest model that does the job. The orchestrator uses this when invoking the skill via the Anthropic API; user `--model` overrides it.
-
-| Model | Use for |
-|:------|:--------|
-| `claude-haiku-4-5-20251001` | Mechanical utilities (token compression, format conversion, lookups, simple audits with clear rules) |
-| `claude-sonnet-4-6` | Default for most skills (balanced quality/cost) |
-| `claude-opus-4-7` | Heavy reasoning skills (architectural audits, complex SDLC orchestration, security review with judgment) |
-
-If the field is omitted the orchestrator falls back to its `DEFAULT_MODEL` (currently Sonnet).
-
-### Automated cleanup
-
-Use [skill-yaml-cleanup](../Skill-yaml-cleanup/) to audit and fix violations:
-
-```bash
-# Audit all skills
-python ../Skill-yaml-cleanup/scripts/audit.py --dir ~/.agents/skills
-
-# Auto-normalize a single skill (dry run first)
-python ../Skill-yaml-cleanup/scripts/cleanup.py --dir ./my-skill --analyze --dry-run
-```
-
-The `normalize()` helper in `Skill-yaml-cleanup/scripts/_common.py` is the canonical in-memory normalizer — `build_registry.py` calls it during ingestion.
+MIT — see [LICENSE](LICENSE).

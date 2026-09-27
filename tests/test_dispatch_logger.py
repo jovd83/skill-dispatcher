@@ -219,7 +219,9 @@ class DispatchLoggerTests(unittest.TestCase):
             payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
             self.assertEqual(payload["model"], "gemini-2.5-pro")
 
-    def test_logger_auto_populates_policy_lookup_when_flags_are_omitted(self):
+    def test_logger_never_consults_shared_memory_when_policy_flags_are_omitted(self):
+        # 4.0.0: the automatic shared-memory policy lookup was removed. Even with a matching
+        # RoutingPolicies entry available, an event without --policy-* flags carries no policy_lookup.
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             repo_root = temp_root / "demo-repo"
@@ -269,7 +271,7 @@ class DispatchLoggerTests(unittest.TestCase):
                     "--intent",
                     "implement_ui_confirmation_test",
                     "--reason",
-                    "Automatic policy telemetry should be attached",
+                    "No policy lookup without explicit flags",
                     "--decision",
                     "HANDOFF",
                 ],
@@ -281,10 +283,7 @@ class DispatchLoggerTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
-            self.assertEqual(payload["policy_lookup"]["status"], "hit")
-            self.assertEqual(payload["policy_lookup"]["source"], "shared-memory")
-            self.assertEqual(payload["policy_lookup"]["hit_count"], 1)
-            self.assertFalse(payload["policy_lookup"]["applied"])
+            self.assertNotIn("policy_lookup", payload)
 
 
 if __name__ == "__main__":
