@@ -162,3 +162,15 @@ Skills have a `lifecycle` field: `active`, `sunset`, or `archived`.
 - **Active**: Normal routing. No restrictions.
 - **Sunset**: The dispatcher SHOULD deprioritize this skill and log a warning when it is selected. Include a note in the routing reason: "⚠️ This skill is in sunset — verify it is still needed."
 - **Archived**: The dispatcher MUST NOT route to archived skills. Return `NO_MATCH` if the only candidate is archived, and identify the gap in the response.
+
+## 15. Chain Definition Enforcement
+
+When a selected skill has `config/chain_definition.json`, the chain definition is an execution contract, not advisory context.
+
+- Route execution through `skill-orchestrator` or an equivalent runtime that can emit per-phase telemetry.
+- If the chain has `"mandatory": true`, the model MUST NOT continue outside the chain. It must execute the chain or stop with a blocker.
+- Each phase defaults to mandatory unless it has `"mandatory": false`.
+- Every mandatory phase MUST produce one terminal log event with the shared `chain_id`, its `phase_id`, and `phase_status` equal to `success`, `failed`, or `blocked`.
+- Optional phases MAY produce `skipped` or `not_applicable`, but the skip must still be logged with `phase_id` and a clear reason.
+- A mandatory phase that is missing from telemetry, declares `not_applicable`, or is blocked by allowlist/tooling causes the chain to fail. Do not mark the overall task complete.
+- Agent-handled phases (`"skill": null`) must also emit a terminal phase event so compliance audits can distinguish executed agent work from silent omission.
