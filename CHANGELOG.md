@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.1 — 2026-09-27
+
+### Changed
+- `build_registry.py --preflight` looks for `normalize()` in `skill-lint`, the new name of `skill-yaml-cleanup`, before the old folder names.
+- `.skill-lint.json` skips skill-lint's telemetry check for this repository: the dispatcher documents the logger that the hooks call, which is not a model-run telemetry instruction.
+
 ## 4.0.0 — 2026-09-27
 
 The dispatcher becomes an analytics skill. Usage is logged by harness hooks instead of by the model.

@@ -1,6 +1,6 @@
 # Skill Dispatcher
 
-[![version](https://img.shields.io/badge/version-4.0.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-4.0.1-blue)](CHANGELOG.md)
 [![status](https://img.shields.io/badge/status-stable-3fb950)](SKILL.md)
 [![category](https://img.shields.io/badge/category-analysis-0a7ea4)](SKILL.md)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -45,7 +45,7 @@ To add or debug usage logging for a harness, read `hooks/README.md`: that is con
 
 ```
 skill-dispatcher/
-├── SKILL.md                       # the analytics skill (4.0.0)
+├── SKILL.md                       # the analytics skill (4.0.1)
 ├── hooks/
 │   ├── skill_usage_hook.py        # one hook script for every harness
 │   ├── README.md                  # per-harness registration and payload notes

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Optional: import normalize() from skill-yaml-cleanup if available.
+# Optional: import normalize() from skill-lint (formerly skill-yaml-cleanup) if available.
 # build_registry uses it for --preflight in-memory normalization.
 # Falls back to a no-op so the registry can still be built without the
 # cleanup skill installed.
@@ -17,6 +17,8 @@ def _try_import_normalize():
     # Common locations relative to this script's parent (skill-dispatcher root)
     skill_root = Path(__file__).parent.parent
     candidates = [
+        skill_root.parent / "skill-lint" / "scripts",
+        Path.home() / ".agents" / "skills" / "skill-lint" / "scripts",
         skill_root.parent / "Skill-yaml-cleanup" / "scripts",
         skill_root.parent / "skill-yaml-cleanup" / "scripts",
         Path.home() / ".agents" / "skills" / "skill-yaml-cleanup" / "scripts",
@@ -759,7 +761,7 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Normalize SKILL.md frontmatter in memory before parsing (default: on). "
-             "Requires skill-yaml-cleanup to be installed alongside this skill.",
+             "Requires skill-lint (formerly skill-yaml-cleanup) to be installed alongside this skill.",
     )
     parser.add_argument(
         "--strict",
@@ -792,9 +794,9 @@ def main():
     if args.preflight:
         preflight_fn = _try_import_normalize()
         if preflight_fn is None:
-            print("[~] Preflight: skill-yaml-cleanup not found — skipping in-memory normalization.")
+            print("[~] Preflight: skill-lint not found — skipping in-memory normalization.")
         else:
-            print("[*] Preflight: normalize() loaded from skill-yaml-cleanup.")
+            print("[*] Preflight: normalize() loaded from skill-lint.")
 
     scan_dirs = candidate_scan_dirs(skill_root)
     skills, health_report = find_skills(scan_dirs, preflight_fn=preflight_fn, strict=args.strict)
