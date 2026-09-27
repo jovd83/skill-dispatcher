@@ -10,12 +10,15 @@ One script serves every harness; each registration passes --harness:
   gemini       AfterTool(activate_skill|read_file|...), BeforeAgent, AfterAgent   ~/.gemini/settings.json
   antigravity  PostToolUse(view_file|run_command), Stop (with --event)  ~/.gemini/config/hooks.json
   grok         PostToolUse, UserPromptSubmit, Stop                      ~/.grok/hooks/skill-telemetry.json
+  copilot      postToolUse, userPromptSubmitted, agentStop (with --event)  ~/.copilot/hooks/skill-telemetry.json
+  hermes       on_skill_lifecycle, on_session_end                       ~/.hermes/config.yaml -> hooks:
 
 A skill counts as "used" when:
-  1. the harness's dedicated skill tool ran (Claude `Skill`, Gemini `activate_skill`), or
+  1. the harness's dedicated skill tool ran (Claude `Skill`, Gemini `activate_skill`) or reported the
+     load itself (Hermes `on_skill_lifecycle` action "loaded"), or
   2. any tool input references <runtime skills root>/<skill>/.../SKILL.md (Codex/Grok read it via
      shell or read_file; Claude sometimes Reads it directly), or
-  3. the user prompt invokes it explicitly (`/skill` in Claude/Gemini/Grok, `$skill` in Codex).
+  3. the user prompt invokes it explicitly (`/skill` in Claude/Gemini/Grok/Copilot, `$skill` in Codex).
 Only installed skills under the user's runtime skill roots count; reading a SKILL.md in a
 development tree is authoring, not usage. Each skill is logged once per session per 30 minutes.
 
@@ -43,11 +46,12 @@ LOGGER = Path(os.environ.get("SKILL_HOOK_LOGGER",
                              HOME / ".agents" / "skills" / "skill-dispatcher" / "scripts" / "dispatch_logger.py"))
 SKILL_ROOTS = [HOME / d for d in (".agents/skills", ".claude/skills", ".codex/skills", ".gemini/skills",
                                   ".gemini/antigravity/skills", ".gemini/config/skills", ".grok/skills",
-                                  ".cursor/skills")]
+                                  ".cursor/skills", ".copilot/skills", ".hermes/skills")]
 DEDUPE_SECONDS = 30 * 60
 SKILL_TOOLS = {"skill": "skill", "activate_skill": "name", "use_skill": "name", "load_skill": "name"}
 # <home>/.<harness>/.../skills/<name>/.../SKILL.md  (also plugin caches such as ~/.codex/plugins/cache/.../skills/pdf)
-SKILL_PATH = re.compile(r"[\\/]\.(?:agents|claude|codex|gemini|grok|cursor)[\\/](?:[^\\/'\"\s]+[\\/])*?skills[\\/]"
+SKILL_PATH = re.compile(r"[\\/]\.(?:agents|claude|codex|gemini|grok|cursor|copilot|hermes)[\\/]"
+                        r"(?:[^\\/'\"\s]+[\\/])*?skills[\\/]"
                         r"(?P<name>[A-Za-z0-9._-]+)[\\/](?:(?P<sub>[^'\"\s]*?)[\\/])?SKILL\.md", re.IGNORECASE)
 PROMPT_SLASH = re.compile(r"^\s*/(?:(?:user|local|repo):)?(?P<name>[A-Za-z0-9._-]+)")
 PROMPT_DOLLAR = re.compile(r"(?<![\w$])\$(?P<name>[A-Za-z][A-Za-z0-9._-]+)")
@@ -175,8 +179,9 @@ def new_transcript_text(tpath, sess, tool_calls_only):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--harness", required=True, choices=["claude-code", "codex", "gemini", "antigravity", "grok"])
-    ap.add_argument("--event", help="event name, for harnesses whose payload omits it (Antigravity)")
+    ap.add_argument("--harness", required=True, choices=["claude-code", "codex", "gemini", "antigravity", "grok",
+                                                           "copilot", "hermes"])
+    ap.add_argument("--event", help="event name, for harnesses whose payload omits it (Antigravity, Copilot)")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
     # Read bytes and decode leniently: tool output inside a payload can carry invalid UTF-8
@@ -196,12 +201,19 @@ def main():
     payload = json.loads(raw) if raw.strip() else {}
 
     call = payload.get("toolCall") if isinstance(payload.get("toolCall"), dict) else {}  # Antigravity shape
+    extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}  # Hermes shell-hook shape
     event = args.event or first(payload, "hook_event_name", "hookEventName", default="?")
-    session = first(payload, "session_id", "sessionId", "conversationId",
-                    default=os.environ.get("GROK_SESSION_ID", "nosession"))
+    # Hermes: task_id is on every event, session_id is empty when a /skill command loads a skill.
+    session = first(extra, "task_id") or first(payload, "session_id", "sessionId", "conversationId",
+                                               default=os.environ.get("GROK_SESSION_ID", "nosession"))
     tool = first(payload, "tool_name", "toolName") or call.get("name")
-    tool_input = first(payload, "tool_input", "toolInput", default=None) or call.get("args") or {}
-    model = first(payload, "model", "modelId", "model_name", "modelName") or \
+    tool_input = first(payload, "tool_input", "toolInput", "toolArgs", default=None) or call.get("args") or {}
+    if isinstance(tool_input, str) and tool_input.lstrip().startswith("{"):  # Copilot may send toolArgs as JSON text
+        try:
+            tool_input = json.loads(tool_input)
+        except ValueError:
+            pass
+    model = first(payload, "model", "modelId", "model_name", "modelName") or first(extra, "model") or \
         model_from_transcript(first(payload, "transcript_path", "transcriptPath"))
 
     skills = installed_skills()
@@ -210,13 +222,18 @@ def main():
     sess["touched"] = time.time()
 
     hits = []
-    if tool:
+    if event == "on_skill_lifecycle":  # Hermes reports the load itself; its skill name is authoritative
+        name = str(extra.get("skill_name") or "").replace("\\", "/").split("/")[-1].split(":")[-1]
+        if extra.get("action") == "loaded" and name:
+            hits = [(name, f"skill loaded ({extra.get('provenance') or 'unknown'})")]
+    elif tool:
         hits = detect_from_tool(tool, tool_input, skills)
-    elif event in ("UserPromptSubmit", "BeforeAgent", "user_prompt_submit"):
+    elif event in ("UserPromptSubmit", "BeforeAgent", "user_prompt_submit", "userPromptSubmitted"):
         hits = detect_from_prompt(first(payload, "prompt", "userPrompt", "user_prompt"), args.harness, skills)
-        if hits and not model:  # model unknown before the first reply: log at turn end
-            sess["pending"] += [[n, h, event] for n, h in hits]
-            hits = []
+    # Model unknown yet (prompt, Hermes load, Copilot tool call): log at turn end, when it is known.
+    if hits and not model and (not tool or args.harness == "copilot"):
+        sess["pending"] += [[n, h, event] for n, h in hits]
+        hits = []
 
     # Safety net at turn end: scan the part of the session transcript written since the last scan.
     # Antigravity's PostToolUse payload may omit the tool call; Codex fires no PostToolUse for a
@@ -227,7 +244,8 @@ def main():
                                     tool_calls_only=(args.harness == "codex"))
         hits += [(n, h + " (transcript)") for n, h in detect_from_tool("tool call", fresh, skills)]
 
-    if model or event in ("Stop", "AfterAgent", "stop", "SessionEnd"):
+    if model or event in ("Stop", "AfterAgent", "stop", "SessionEnd", "agentStop", "sessionEnd",
+                          "on_session_end"):
         hits += [(n, h, e) for n, h, e in sess.get("pending", [])]
         sess["pending"] = []
     now = time.time()

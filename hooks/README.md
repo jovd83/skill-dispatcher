@@ -8,11 +8,11 @@ These hooks replace the "CRITICAL TELEMETRY REQUIREMENT" notice that asked the *
 
 ## When a skill counts as used
 
-1. The harness's own skill tool ran: `Skill` in Claude Code, `activate_skill` in Gemini CLI.
+1. The harness's own skill tool ran: `Skill` in Claude Code, `activate_skill` in Gemini CLI. Or the harness reported the load itself: Hermes's `on_skill_lifecycle` with action `loaded`.
 2. A tool read `<runtime skills root>/<skill>/…/SKILL.md`. Codex, Grok and Antigravity load skills this way, and Claude sometimes does too. A nested sub-skill counts toward its parent (`playwright-skill/core/SKILL.md` → playwright-skill).
-3. The user invoked the skill explicitly: `/skill` in Claude Code, Grok or Gemini, or `$skill` in Codex.
+3. The user invoked the skill explicitly: `/skill` in Claude Code, Grok, Gemini or Copilot, or `$skill` in Codex.
 
-Only installed skills under `~/.agents`, `~/.claude`, `~/.codex`, `~/.gemini` (including `antigravity/`), `~/.grok` or `~/.cursor` count. Reading a SKILL.md in `C:\projects\skills` is authoring, not usage. Each skill is logged once per session per 30 minutes.
+Only installed skills under `~/.agents`, `~/.claude`, `~/.codex`, `~/.gemini` (including `antigravity/`), `~/.grok`, `~/.cursor`, `~/.copilot` or `~/.hermes` count. Reading a SKILL.md in `C:\projects\skills` is authoring, not usage. Each skill is logged once per session per 30 minutes.
 
 The hook never blocks the harness. Errors go to `~/.agents/dispatcher-data/hooks/errors.log`, and the script always exits 0. To dump raw payloads while debugging, create `~/.agents/dispatcher-data/hooks/debug.flag`; payloads then land in `debug-payloads/`. Remove the flag afterwards, because prompts are stored too.
 
@@ -54,7 +54,7 @@ Approval is tied to the file's hash: any edit to `hooks.json` needs a fresh appr
 
 ### Gemini CLI
 
-**Config:** `~/.gemini/settings.json` → `hooks`
+**Config:** `~/.gemini/settings.json` → `hooks`. **Not registered:** the registration was removed on 2026-09-27, and the script still supports Gemini CLI. The full snippet for turning it back on is in the manual's `harness-gemini.md`.
 
 | Event | Matcher | What it catches |
 |---|---|---|
@@ -97,8 +97,36 @@ The Antigravity CLI (`agy`) reads `~/.gemini/antigravity-cli/settings.json` inst
 
 The timeout is set to 30 s, because Grok's default is 5 s. Grok's payload is camelCase (`toolName`, `toolInput`, `sessionId`). It carries no model name; the script reads `modelId` from the session transcript (`updates.jsonl`). `grok inspect --json` lists the loaded hooks.
 
+### GitHub Copilot (CLI and VS Code agent)
+
+**Config:** `~/.copilot/hooks/skill-telemetry.json`. Not registered, because Copilot isn't installed. The file uses `"version": 1`, and each handler has `powershell`/`bash` commands plus `timeoutSec`.
+
+| Event | Matcher | What it catches |
+|---|---|---|
+| `postToolUse` | – | A tool named `skill`, or a `view` of a SKILL.md |
+| `userPromptSubmitted` | – | `/skill` |
+| `agentStop` | – | Logs pending hits, with the model read from `transcriptPath` |
+
+The payload is camelCase (`toolName`, `toolArgs`, `sessionId`) and has no event name, so each registration passes `--event`. `postToolUse` has no model, so Copilot's tool hits also wait for `agentStop`. VS Code reads the same folder. Keep `chat.useClaudeHooks` off, or Copilot sessions get logged as `claude-code`.
+
+### Hermes Agent
+
+**Config:** `~/.hermes/config.yaml` → `hooks:` (shell hooks). Not registered yet. Hermes also needs `skills.external_dirs: [~/.agents/skills]` to see the installed skills at all.
+
+| Event | What it catches |
+|---|---|
+| `on_skill_lifecycle` | Hermes's own report of a load (`extra.action == "loaded"`, `extra.skill_name`), from `skill_view`, `/skill` or cron |
+| `on_session_end` | Fires at the end of every turn with `extra.model`, and logs the pending skills |
+
+The session key is `extra.task_id`, because `session_id` is empty on `/skill` loads. Hermes asks once per (event, command) pair for consent, keyed on the command text. Use forward slashes in the command: Hermes splits it with `shlex`.
+
 ## Proof
 
-Live-proven on 2026-09-27: Claude Code, Codex, Grok and Antigravity (`C:\projects\VS_prj\SkillRework\proof60927-134546-wallboard-all-harnesses.png`). Gemini CLI is unit-tested only, because Google no longer accepts personal OAuth for it.
+Live-proven on 2026-09-27: Claude Code, Codex, Grok and Antigravity (`C:\projects\VS_prj\SkillRework\proof\20260927-134546-wallboard-all-harnesses.png`). Unit-tested only:
+- **Gemini CLI:** Google no longer accepts personal OAuth for it.
+- **Copilot:** payloads from GitHub's hooks reference; not installed.
+- **Hermes:** payloads from Hermes 0.21.2's source; not configured.
+
+The full manual, with one page per harness and remote reporting, is in `C:\projects\VS_prj\SkillRework\telemetry-hooks\`.
 
 `C:\projects\VS_prj\SkillRework\tools\live_hook_tests.py` runs each CLI headless against the `booklet-droodle` skill. Shell access is off where the CLI allows it, so only the hook can produce the event. It then calls `wallboard_proof.py`, which regenerates the wallboard, opens `file:///C:/Users/jochi/.agents/dispatcher-data/reports/wallboard.html`, and screenshots the Recent Activity rows the hooks produced.

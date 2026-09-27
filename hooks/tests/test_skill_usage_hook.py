@@ -235,6 +235,63 @@ class HookTest(unittest.TestCase):
                                       "tool_input": {"skill": SKILL}, "transcript_path": self.transcript("m")})
         self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
 
+    # --- GitHub Copilot CLI (payload format from docs.github.com hooks reference; not live-tested) ----
+    def run_event(self, harness, event, payload):
+        r = subprocess.run([sys.executable, str(HOOK), "--harness", harness, "--event", event],
+                           input=json.dumps(payload), capture_output=True, text=True, env=self.env, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_copilot_view_logged_at_agent_stop_with_model(self):
+        base = {"sessionId": "cp1", "timestamp": 1790000000000, "cwd": str(HOME)}
+        self.run_event("copilot", "postToolUse", dict(base, toolName="view", toolArgs={"path": RT_SKILL_MD},
+                                                      toolResult={"resultType": "success", "textResultForLlm": "..."}))
+        self.assertEqual(self.calls(), [], "no model in postToolUse: wait for agentStop")
+        self.run_event("copilot", "agentStop", dict(base, transcriptPath=self.transcript("gpt-5.6"), stopReason="end_turn"))
+        c = self.calls()
+        self.assertEqual([self.arg(x, "--skill") for x in c], [SKILL])
+        self.assertEqual(self.arg(c[0], "--model"), "gpt-5.6")
+        self.assertIn("copilot hook", self.arg(c[0], "--intent"))
+
+    def test_copilot_skill_tool_with_json_text_args(self):
+        base = {"sessionId": "cp2", "timestamp": 1790000000000, "cwd": str(HOME)}
+        self.run_event("copilot", "postToolUse", dict(base, toolName="skill", toolArgs=json.dumps({"skill": SKILL})))
+        self.run_event("copilot", "agentStop", dict(base, transcriptPath="", stopReason="end_turn"))
+        self.assertEqual([self.arg(x, "--skill") for x in self.calls()], [SKILL])
+
+    def test_copilot_slash_prompt(self):
+        base = {"sessionId": "cp3", "timestamp": 1790000000000, "cwd": str(HOME)}
+        self.run_event("copilot", "userPromptSubmitted", dict(base, prompt=f"/{SKILL} make a booklet"))
+        self.run_event("copilot", "agentStop", dict(base, transcriptPath=self.transcript("claude-sonnet-5")))
+        c = self.calls()
+        self.assertEqual([self.arg(x, "--skill") for x in c], [SKILL])
+        self.assertIn("userPromptSubmitted: user /command", self.arg(c[0], "--reason"))
+
+    # --- Hermes Agent shell hooks (payload format from hermes-agent agent/shell_hooks.py) --------
+    def test_hermes_skill_lifecycle_loaded_logged_at_session_end(self):
+        lifecycle = {"hook_event_name": "on_skill_lifecycle", "tool_name": None, "tool_input": None,
+                     "session_id": "", "cwd": str(HOME), "profile": "default",
+                     "extra": {"action": "loaded", "skill_name": SKILL, "provenance": "external",
+                               "task_id": "h1", "use_count": 3, "reused": True, "reuse_after_patch": False}}
+        self.run_hook("hermes", lifecycle)
+        self.assertEqual(self.calls(), [], "no model in on_skill_lifecycle: wait for on_session_end")
+        self.run_hook("hermes", {"hook_event_name": "on_session_end", "tool_name": None, "tool_input": None,
+                                 "session_id": "sess-9", "cwd": str(HOME), "profile": "default",
+                                 "extra": {"task_id": "h1", "completed": True, "interrupted": False,
+                                           "model": "anthropic/claude-sonnet-5", "platform": "cli"}})
+        c = self.calls()
+        self.assertEqual([self.arg(x, "--skill") for x in c], [SKILL])
+        self.assertEqual(self.arg(c[0], "--model"), "anthropic/claude-sonnet-5")
+        self.assertIn("skill loaded (external)", self.arg(c[0], "--reason"))
+        self.assertEqual(self.arg(c[0], "--chain-id"), "hermes-h1")
+
+    def test_hermes_other_lifecycle_actions_are_not_usage(self):
+        for action in ("created", "patched", "installed", "archived"):
+            self.run_hook("hermes", {"hook_event_name": "on_skill_lifecycle", "session_id": "",
+                                     "extra": {"action": action, "skill_name": SKILL, "task_id": "h2"}})
+        self.run_hook("hermes", {"hook_event_name": "on_session_end", "session_id": "s",
+                                 "extra": {"task_id": "h2", "model": "m"}})
+        self.assertEqual(self.calls(), [])
+
     def test_garbage_input_never_fails(self):
         self.run_hook("codex", "this is not json")
         self.assertEqual(self.calls(), [])
