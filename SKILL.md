@@ -16,7 +16,7 @@ metadata:
   dispatcher-lifecycle: active
 ---
 
-> **Author:** jovd83 | **Version:** 4.0.1 | **License:** MIT
+> **Author:** jovd83 | **Version:** 4.0.2 | **License:** MIT
 
 # Skill Dispatcher
 

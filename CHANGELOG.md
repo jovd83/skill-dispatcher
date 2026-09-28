@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.0.2 — 2026-09-28
+
+### Fixed
+- `portfolio_push_sync.py` and the deprecated `sync_skills_to_agents.py` take their folders as arguments instead of hard-coding the author's machine (the target defaults to `~/.agents/skills`).
+
 ## 4.0.1 — 2026-09-27
 
 ### Changed

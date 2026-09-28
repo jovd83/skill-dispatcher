@@ -81,8 +81,11 @@ def sync_portfolio(root_dir):
     return synced, skipped, errors
 
 if __name__ == "__main__":
-    portfolio_root = "C:/projects/skills"
-    synced, skipped, errors = sync_portfolio(portfolio_root)
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("portfolio_root", help="folder that holds the skill repositories")
+    synced, skipped, errors = sync_portfolio(ap.parse_args().portfolio_root)
     
     print("\n" + "="*40)
     print("Portfolio Sync Summary")

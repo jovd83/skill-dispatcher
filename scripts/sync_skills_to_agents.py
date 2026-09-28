@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """Sync Skills - Copies SKILL.md from projects directory to agents directory.
+
+Deprecated: it copies only top-level SKILL.md files. The manifest-driven sync that replaced it copies whole
+skill folders and runs skill-lint first.
 """
 
 import shutil
@@ -31,10 +34,15 @@ def sync_skills(source_root, target_root):
     return synced, skipped
 
 if __name__ == "__main__":
-    source = "C:/projects/skills"
-    target = "C:/Users/jochi/.agents/skills"
-    
-    synced, skipped = sync_skills(source, target)
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("source", help="development folder that holds the skill repositories")
+    ap.add_argument("target", nargs="?", default=str(Path.home() / ".agents" / "skills"),
+                    help="installed skills folder (default: ~/.agents/skills)")
+    args = ap.parse_args()
+
+    synced, skipped = sync_skills(args.source, args.target)
     
     print("\n" + "="*40)
     print(f"Sync Completion Report")
